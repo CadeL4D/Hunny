@@ -34,6 +34,10 @@ final class AppState: ObservableObject {
     @Published private(set) var answers: [Answer] = []
     @Published private(set) var unseenNudges: [Nudge] = []
 
+    /// Every task, retired ones included — data for the hidden task editor.
+    /// `tasks` above stays active-only for the regular UI.
+    @Published private(set) var allTasks: [OwnTask] = []
+
     private var pollTask: Task<Void, Never>?
 
     init() {
@@ -135,6 +139,7 @@ final class AppState: ObservableObject {
         isReady = false
         players = []
         tasks = []
+        allTasks = []
         completions = []
         competitionTask = nil
         claim = nil
@@ -250,6 +255,48 @@ final class AppState: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    // MARK: Task administration
+    // Hidden editor, opened by tapping your profile avatar five times.
+
+    func loadAllTasks() async throws {
+        guard let client else { return }
+        allTasks = try await client.list(OwnTask.self, from: "items/own_tasks", query: [
+            "fields": "id,title,detail,icon,max_per_week,sort,active",
+            "sort": "sort,id",
+            "limit": "200",
+        ])
+    }
+
+    func createTask(title: String, detail: String, icon: String, maxPerWeek: Int) async throws {
+        guard let client else {
+            throw APIError(status: -1, message: "No server connection")
+        }
+        var body: [String: Any] = [
+            "title": title,
+            "max_per_week": max(1, maxPerWeek),
+            "sort": (allTasks.compactMap(\.sort).max() ?? 0) + 1,
+            // The collection defaults active to false — send it explicitly.
+            "active": true,
+        ]
+        if !detail.isEmpty { body["detail"] = detail }
+        if !icon.isEmpty { body["icon"] = icon }
+        _ = try await client.create(OwnTask.self, in: "items/own_tasks", body: body)
+        await reloadAfterTaskChange()
+    }
+
+    func updateTask(_ task: OwnTask, body: [String: Any]) async throws {
+        guard let client else {
+            throw APIError(status: -1, message: "No server connection")
+        }
+        _ = try await client.update(OwnTask.self, "items/own_tasks/\(task.id)", body: body)
+        await reloadAfterTaskChange()
+    }
+
+    private func reloadAfterTaskChange() async {
+        try? await loadAllTasks()
+        await refresh(quiet: true)
     }
 
     // MARK: Actions

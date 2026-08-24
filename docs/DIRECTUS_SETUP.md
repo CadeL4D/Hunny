@@ -62,7 +62,7 @@ The app creates a row the first time a device connects. You don't seed this.
 | `icon`         | String  | Optional SF Symbol name (e.g. `figure.run`, `book`)          |
 | `max_per_week` | Integer | `1` = once a week; `4` = up to four times, max once per day  |
 | `sort`         | Integer | Display order, default `0`                                   |
-| `active`       | Boolean | Default `true` — flip to `false` to retire a task            |
+| `active`       | Boolean | `false` hides the task — the app's editor always sends it on create |
 
 ### `task_completions` — one row per completed point
 
@@ -146,7 +146,7 @@ are needed:
 | Collection           | Create | Read | Update | Delete |
 | -------------------- | ------ | ---- | ------ | ------ |
 | `players`            | ✅     | ✅   | —      | —      |
-| `own_tasks`          | —      | ✅   | —      | —      |
+| `own_tasks`          | ✅     | ✅   | ✅ (task editor fields) | —      |
 | `task_completions`   | ✅     | ✅   | —      | —      |
 | `competition_tasks`  | —      | ✅   | —      | —      |
 | `competition_claims` | ✅     | ✅   | —      | —      |
@@ -154,9 +154,12 @@ are needed:
 | `answers`            | ✅     | ✅   | ✅ (own edits) | — |
 | `nudges`             | ✅     | ✅   | ✅ (`seen_on` only) | — |
 
-For the two Update actions, use **Use Custom** and limit **Field permissions**
-to `body` (answers) and `seen_on` (nudges). Everything else can be set to full
-"All items" access for the listed actions. No deletes from the app.
+For the three Update actions, use **Use Custom** and limit **Field permissions**
+to `body` (answers), `seen_on` (nudges), and `title, detail, icon, max_per_week,
+sort, active` (own_tasks — used by the app's hidden task editor, opened by
+tapping your profile avatar five times on the score header). Everything else
+can be set to full "All items" access for the listed actions. No deletes from
+the app — retire a task by flipping `active` off instead.
 
 ---
 

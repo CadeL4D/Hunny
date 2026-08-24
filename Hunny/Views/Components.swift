@@ -18,7 +18,7 @@ struct Card<Content: View>: View {
 struct EmptyStateView: View {
     let icon: String
     let title: String
-    let message: String
+    var message: String?
 
     var body: some View {
         VStack(spacing: 10) {
@@ -27,10 +27,12 @@ struct EmptyStateView: View {
                 .foregroundStyle(.tertiary)
             Text(title)
                 .font(.headline)
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            if let message {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(28)

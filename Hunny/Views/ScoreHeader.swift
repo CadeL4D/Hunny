@@ -3,8 +3,13 @@ import SwiftUI
 /// Weekly scoreboard shown at the top of every tab: you vs. them, crown on
 /// the leader, week range underneath. The partner column shows a "waiting…"
 /// hint until their device has connected with the exact same name.
+///
+/// Tapping your own avatar five times (quickly) opens the hidden task editor.
 struct ScoreHeader: View {
     @EnvironmentObject private var app: AppState
+    @State private var showingTaskAdmin = false
+    @State private var profileTapCount = 0
+    @State private var lastProfileTap: Date?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -12,7 +17,8 @@ struct ScoreHeader: View {
                 name: app.myName.isEmpty ? "You" : app.myName,
                 points: app.myPoints,
                 isLeader: app.myPoints > app.partnerPoints,
-                alignedLeading: true
+                alignedLeading: true,
+                onAvatarTap: handleProfileTap
             )
 
             VStack(spacing: 3) {
@@ -42,6 +48,24 @@ struct ScoreHeader: View {
             Color(.secondarySystemGroupedBackground),
             in: RoundedRectangle(cornerRadius: 18, style: .continuous)
         )
+        .sheet(isPresented: $showingTaskAdmin) {
+            TaskAdminView()
+        }
+    }
+
+    /// Five taps within 1.5s of each other opens the hidden task editor;
+    /// anything slower resets the count so it can't trigger by accident.
+    private func handleProfileTap() {
+        if let last = lastProfileTap, Date().timeIntervalSince(last) > 1.5 {
+            profileTapCount = 0
+        }
+        lastProfileTap = Date()
+        profileTapCount += 1
+        guard profileTapCount >= 5 else { return }
+        profileTapCount = 0
+        lastProfileTap = nil
+        Haptics.tap()
+        showingTaskAdmin = true
     }
 }
 
@@ -51,11 +75,13 @@ private struct PlayerScoreColumn: View {
     let isLeader: Bool
     let alignedLeading: Bool
     var joined = true
+    var onAvatarTap: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 6) {
             ZStack(alignment: .topTrailing) {
                 AvatarView(name: name)
+                    .onTapGesture { onAvatarTap?() }
                 if isLeader {
                     Image(systemName: "crown.fill")
                         .font(.caption2)

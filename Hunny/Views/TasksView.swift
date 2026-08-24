@@ -14,11 +14,7 @@ struct TasksView: View {
                     ScoreHeader()
 
                     if app.tasks.isEmpty {
-                        EmptyStateView(
-                            icon: "checklist",
-                            title: "No tasks yet",
-                            message: "Add personal tasks in Directus and they'll show up here. See docs/DIRECTUS_SETUP.md in the Hunny repo."
-                        )
+                        EmptyStateView(icon: "checklist", title: "No tasks yet")
                     } else {
                         if !weeklyTasks.isEmpty {
                             section(title: "Once this week", tasks: weeklyTasks)

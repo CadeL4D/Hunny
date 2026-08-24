@@ -17,9 +17,13 @@ struct OwnTask: Codable, Identifiable, Hashable {
     var detail: String?
     var icon: String?
     var maxPerWeek: Int
+    // Only the hidden task editor fetches these; the regular list query
+    // leaves them out and they decode as nil.
+    var sort: Int?
+    var active: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, detail, icon
+        case id, title, detail, icon, sort, active
         case maxPerWeek = "max_per_week"
     }
 }
