@@ -52,7 +52,7 @@ struct SetupView: View {
             }
 
             if editing {
-                Section("Diagnostics") {
+                Section {
                     Button {
                         UIPasteboard.general.string = DiagnosticLog.shared.formatted()
                         copiedDiagnostics = true

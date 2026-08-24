@@ -178,9 +178,9 @@ final class DirectusClient {
         }
     }
 
-    /// Turns a DecodingError into something a human can act on: what was
+    /// Turns a decode failure into something a human can act on: what was
     /// expected, where, and a preview of the body that didn't match.
-    private static func describe(_ error: DecodingError, data: Data) -> String {
+    private static func describe(_ error: Error, data: Data) -> String {
         func path(_ keys: [CodingKey]) -> String {
             keys.isEmpty ? "root" : keys.map(\.stringValue).joined(separator: ".")
         }
@@ -194,7 +194,7 @@ final class DirectusClient {
             summary = "unexpected null for \(type) at \(path(context.codingPath))"
         case .dataCorrupted(let context):
             summary = context.debugDescription
-        @unknown default:
+        default:
             summary = String(describing: error)
         }
         let preview = String(data: data.prefix(300), encoding: .utf8)
