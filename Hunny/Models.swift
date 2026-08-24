@@ -1,21 +1,13 @@
 import Foundation
 
 // Codable models mirroring the Directus collections in docs/DIRECTUS_SETUP.md.
-// Week keys are "yyyy-MM-dd" strings for the Monday that starts the week.
-
-struct DirectusUser: Codable {
-    let id: String
-    var firstName: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case firstName = "first_name"
-    }
-}
+// There are no Directus user accounts: players are identified by the exact
+// (case-sensitive) name strings typed on each device, and all name matching
+// happens in the app. Week keys are "yyyy-MM-dd" strings for the Monday that
+// starts the week.
 
 struct Player: Codable, Identifiable, Hashable {
     let id: Int
-    let user: String
     var name: String
 }
 
@@ -34,13 +26,13 @@ struct OwnTask: Codable, Identifiable, Hashable {
 
 struct TaskCompletion: Codable, Identifiable, Hashable {
     let id: Int
-    let user: String
+    let player: String
     let task: Int
     var weekStart: String
     var completedOn: String
 
     enum CodingKeys: String, CodingKey {
-        case id, user, task
+        case id, player, task
         case weekStart = "week_start"
         case completedOn = "completed_on"
     }
@@ -61,11 +53,11 @@ struct CompetitionTask: Codable, Identifiable, Hashable {
 struct CompetitionClaim: Codable, Identifiable, Hashable {
     let id: Int
     let task: Int
-    let user: String
+    let player: String
     var claimedAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, task, user
+        case id, task, player
         case claimedAt = "claimed_at"
     }
 }
@@ -84,12 +76,12 @@ struct Question: Codable, Identifiable, Hashable {
 struct Answer: Codable, Identifiable, Hashable {
     let id: Int
     let question: Int
-    let user: String
+    let player: String
     var body: String
     var updatedAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, question, user, body
+        case id, question, player, body
         case updatedAt = "updated_on"
     }
 }
@@ -97,14 +89,14 @@ struct Answer: Codable, Identifiable, Hashable {
 struct Nudge: Codable, Identifiable, Hashable {
     let id: Int
     let question: Int
-    let fromUser: String
-    let toUser: String
+    let fromPlayer: String
+    let toPlayer: String
     var seenOn: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, question
-        case fromUser = "from_user"
-        case toUser = "to_user"
+        case fromPlayer = "from_player"
+        case toPlayer = "to_player"
         case seenOn = "seen_on"
     }
 }

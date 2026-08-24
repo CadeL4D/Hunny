@@ -1,15 +1,28 @@
 import Foundation
 
-/// The build-time server URL. CI overwrites this file with the real value from
-/// the DIRECTUS_URL repository secret just before building — the committed copy
-/// stays empty so the endpoint never appears in a public commit. The injected
-/// value is base64-encoded so it isn't trivially visible in the shipped binary.
+/// Build-time configuration. CI overwrites this file with real values from the
+/// DIRECTUS_URL and DIRECTUS_TOKEN repository secrets just before building —
+/// the committed copy stays empty so neither ever appears in a public commit.
+/// The injected values are base64-encoded so they aren't trivially visible in
+/// the shipped binary.
 enum ServerConfig {
     static let encodedDefaultURL: String? = nil
+    static let encodedDefaultToken: String? = nil
 
     static var defaultBaseURLString: String? {
-        encodedDefaultURL
-            .flatMap { Data(base64Encoded: $0) }
-            .flatMap { String(data: $0, encoding: .utf8) }
+        encodedValue(encodedDefaultURL)
+    }
+
+    static var defaultToken: String? {
+        encodedValue(encodedDefaultToken)
+    }
+
+    private static func encodedValue(_ encoded: String?) -> String? {
+        guard let encoded,
+              let data = Data(base64Encoded: encoded),
+              let string = String(data: data, encoding: .utf8),
+              !string.isEmpty
+        else { return nil }
+        return string
     }
 }

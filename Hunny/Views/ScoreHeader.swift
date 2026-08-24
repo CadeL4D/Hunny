@@ -1,14 +1,15 @@
 import SwiftUI
 
 /// Weekly scoreboard shown at the top of every tab: you vs. them, crown on
-/// the leader, week range underneath.
+/// the leader, week range underneath. The partner column shows a "waiting…"
+/// hint until their device has connected with the exact same name.
 struct ScoreHeader: View {
     @EnvironmentObject private var app: AppState
 
     var body: some View {
         HStack(spacing: 14) {
             PlayerScoreColumn(
-                player: app.mePlayer,
+                name: app.myName.isEmpty ? "You" : app.myName,
                 points: app.myPoints,
                 isLeader: app.myPoints > app.partnerPoints,
                 alignedLeading: true
@@ -28,10 +29,11 @@ struct ScoreHeader: View {
             }
 
             PlayerScoreColumn(
-                player: app.opponent,
+                name: app.partnerName.isEmpty ? "Them" : app.partnerName,
                 points: app.partnerPoints,
                 isLeader: app.partnerPoints > app.myPoints,
-                alignedLeading: false
+                alignedLeading: false,
+                joined: app.partnerHasJoined
             )
         }
         .padding(14)
@@ -44,15 +46,16 @@ struct ScoreHeader: View {
 }
 
 private struct PlayerScoreColumn: View {
-    let player: Player?
+    let name: String
     let points: Int
     let isLeader: Bool
     let alignedLeading: Bool
+    var joined = true
 
     var body: some View {
         VStack(spacing: 6) {
             ZStack(alignment: .topTrailing) {
-                AvatarView(name: player?.name)
+                AvatarView(name: name)
                 if isLeader {
                     Image(systemName: "crown.fill")
                         .font(.caption2)
@@ -60,7 +63,7 @@ private struct PlayerScoreColumn: View {
                         .offset(x: 8, y: -4)
                 }
             }
-            Text(player?.name ?? "Waiting…")
+            Text(name)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -68,6 +71,11 @@ private struct PlayerScoreColumn: View {
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(isLeader ? Theme.accent : .primary)
+            if !joined {
+                Text("waiting to join…")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: alignedLeading ? .leading : .trailing)
     }

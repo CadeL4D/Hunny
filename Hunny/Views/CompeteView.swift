@@ -57,7 +57,8 @@ struct CompeteView: View {
     }
 
     private func claimResult(_ claim: CompetitionClaim) -> some View {
-        let mine = claim.user == app.userID
+        let mine = claim.player == app.myName
+        let opponentName = app.partnerName.isEmpty ? "The other player" : app.partnerName
         return HStack(spacing: 12) {
             Image(systemName: mine ? "trophy.fill" : "bolt.slash.fill")
                 .font(.title3)
@@ -65,7 +66,7 @@ struct CompeteView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(mine
                      ? "You claimed it first"
-                     : "\(app.opponent?.name ?? "The other player") claimed it first")
+                     : "\(opponentName) claimed it first")
                     .font(.body.weight(.semibold))
                 if let claimedAt = claim.claimedAt {
                     Text(claimedAt, format: .relative(presentation: .named))

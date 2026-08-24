@@ -93,10 +93,6 @@ final class DirectusClient {
 
     // MARK: Public surface
 
-    func me() async throws -> DirectusUser {
-        try await get("users/me", query: ["fields": "id,first_name"])
-    }
-
     func list<T: Decodable>(_ type: T.Type, from path: String, query: [String: String] = [:]) async throws -> [T] {
         let envelope: Envelope<[T]> = try await get(path, query: query)
         return envelope.data

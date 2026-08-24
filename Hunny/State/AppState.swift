@@ -3,17 +3,24 @@ import SwiftUI
 
 /// Single source of truth: configuration, connection, weekly data, scoring and
 /// every write action. The UI is a pure function of this state.
+///
+/// There is no login. Each device is identified purely by the two names typed
+/// at setup ("your name" and "their name"), which must match across devices
+/// exactly — the app compares them case-sensitively, client-side. All API
+/// traffic uses a single app token injected at build time (or entered in
+/// Settings for custom builds).
 @MainActor
 final class AppState: ObservableObject {
     // MARK: Configuration
 
     private static let serverKey = "hunny.server-url"
-    private static let tokenKey = "hunny.static-token"
-    private static let nameKey = "hunny.display-name"
+    private static let tokenKey = "hunny.token-override"
+    private static let myNameKey = "hunny.my-name"
+    private static let partnerNameKey = "hunny.partner-name"
 
     @Published var serverURLString: String
-    @Published var token: String
-    @Published var displayName: String
+    @Published var myName: String
+    @Published var partnerName: String
 
     @Published var isReady = false
     @Published var isLoading = false
@@ -22,7 +29,6 @@ final class AppState: ObservableObject {
 
     // MARK: Live data
 
-    @Published private(set) var userID: String?
     @Published private(set) var players: [Player] = []
     @Published private(set) var tasks: [OwnTask] = []
     @Published private(set) var completions: [TaskCompletion] = []
@@ -35,13 +41,29 @@ final class AppState: ObservableObject {
     private var pollTask: Task<Void, Never>?
 
     init() {
-        serverURLString = UserDefaults.standard.string(forKey: Self.serverKey) ?? ServerConfig.defaultBaseURLString ?? ""
-        token = Keychain.load(Self.tokenKey) ?? ""
-        displayName = UserDefaults.standard.string(forKey: Self.nameKey) ?? ""
+        let defaults = UserDefaults.standard
+        serverURLString = defaults.string(forKey: Self.serverKey)
+            ?? ServerConfig.defaultBaseURLString ?? ""
+        myName = defaults.string(forKey: Self.myNameKey) ?? ""
+        partnerName = defaults.string(forKey: Self.partnerNameKey) ?? ""
+    }
+
+    /// Token typed into Settings (used for custom/local builds). Official
+    /// builds carry the injected one instead.
+    var tokenOverride: String {
+        Keychain.load(Self.tokenKey) ?? ""
+    }
+
+    private var effectiveToken: String {
+        tokenOverride.isEmpty ? (ServerConfig.defaultToken ?? "") : tokenOverride
     }
 
     var isConfigured: Bool {
-        normalizedBaseURL != nil && !token.isEmpty && !displayName.isEmpty
+        normalizedBaseURL != nil
+            && !effectiveToken.isEmpty
+            && !myName.isEmpty
+            && !partnerName.isEmpty
+            && myName != partnerName
     }
 
     var normalizedBaseURL: URL? {
@@ -58,29 +80,32 @@ final class AppState: ObservableObject {
     }
 
     private var client: DirectusClient? {
-        guard let base = normalizedBaseURL, !token.isEmpty else { return nil }
-        return DirectusClient(baseURL: base, token: token)
+        guard let base = normalizedBaseURL, !effectiveToken.isEmpty else { return nil }
+        return DirectusClient(baseURL: base, token: effectiveToken)
     }
 
     // MARK: Derived
 
-    var mePlayer: Player? { players.first { $0.user == userID } }
-    var opponent: Player? { players.first { $0.user != userID } }
+    /// True once the partner device has connected at least once with the
+    /// exact same name we typed for them.
+    var partnerHasJoined: Bool {
+        players.contains { $0.name == partnerName }
+    }
 
-    var myCompletions: [TaskCompletion] { completions.filter { $0.user == userID } }
-    var partnerCompletions: [TaskCompletion] { completions.filter { $0.user != userID } }
+    var myCompletions: [TaskCompletion] { completions.filter { $0.player == myName } }
+    var partnerCompletions: [TaskCompletion] { completions.filter { $0.player == partnerName } }
 
     var myPoints: Int {
-        myCompletions.count + (claim?.user == userID ? 1 : 0)
+        myCompletions.count + (claim?.player == myName ? 1 : 0)
     }
 
     var partnerPoints: Int {
-        let partnerClaimed = claim != nil && claim?.user != userID
+        let partnerClaimed = claim != nil && claim?.player == partnerName
         return partnerCompletions.count + (partnerClaimed ? 1 : 0)
     }
 
-    var myAnswer: Answer? { answers.first { $0.user == userID } }
-    var theirAnswer: Answer? { answers.first { $0.user != userID } }
+    var myAnswer: Answer? { answers.first { $0.player == myName } }
+    var theirAnswer: Answer? { answers.first { $0.player == partnerName } }
 
     func completionsThisWeek(for task: OwnTask) -> [TaskCompletion] {
         myCompletions.filter { $0.task == task.id }
@@ -97,24 +122,30 @@ final class AppState: ObservableObject {
 
     // MARK: Connection
 
-    func saveConfiguration(url: String, token: String, name: String) {
+    func saveConfiguration(url: String, token: String, myName: String, partnerName: String) {
         serverURLString = url
-        self.token = token
-        displayName = name
+        self.myName = myName
+        self.partnerName = partnerName
         UserDefaults.standard.set(url, forKey: Self.serverKey)
-        UserDefaults.standard.set(name, forKey: Self.nameKey)
-        Keychain.save(token, for: Self.tokenKey)
+        UserDefaults.standard.set(myName, forKey: Self.myNameKey)
+        UserDefaults.standard.set(partnerName, forKey: Self.partnerNameKey)
+        if token.isEmpty {
+            Keychain.delete(Self.tokenKey)
+        } else {
+            Keychain.save(token, for: Self.tokenKey)
+        }
     }
 
     func signOut() {
         Keychain.delete(Self.tokenKey)
-        UserDefaults.standard.removeObject(forKey: Self.serverKey)
-        UserDefaults.standard.removeObject(forKey: Self.nameKey)
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: Self.serverKey)
+        defaults.removeObject(forKey: Self.myNameKey)
+        defaults.removeObject(forKey: Self.partnerNameKey)
         serverURLString = ServerConfig.defaultBaseURLString ?? ""
-        token = ""
-        displayName = ""
+        myName = ""
+        partnerName = ""
         isReady = false
-        userID = nil
         players = []
         tasks = []
         completions = []
@@ -127,13 +158,20 @@ final class AppState: ObservableObject {
     }
 
     func connect() async {
-        guard let client, !isReady || userID == nil else { return }
+        guard isConfigured else { return }
+        guard let client else {
+            errorMessage = "No access token. Official builds carry one automatically — for a custom build, enter a token in the Server section."
+            return
+        }
         isLoading = true
         defer { isLoading = false }
         do {
-            let me = try await client.me()
-            userID = me.id
-            try await upsertPlayer(named: displayName, userID: me.id)
+            do {
+                // Register this name so the other device can see we've joined.
+                _ = try await client.create(Player.self, in: "items/players", body: ["name": myName])
+            } catch let error as APIError where error.isUniqueViolation {
+                // Already registered from an earlier run — fine.
+            }
             isReady = true
             startPolling()
             await refresh()
@@ -143,34 +181,12 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func upsertPlayer(named name: String, userID uid: String) async throws {
-        guard let client else { return }
-        let query = [
-            "filter": Filter.eq("user", uid),
-            "fields": "id,user,name",
-            "limit": "1",
-        ]
-        let existing = try await client.list(Player.self, from: "items/players", query: query)
-        if var player = existing.first {
-            if player.name != name {
-                let updated: Player = try await client.update(
-                    Player.self, "items/players/\(player.id)", body: ["name": name]
-                )
-                player = updated
-            }
-            players = [player]
-        } else {
-            let created: Player = try await client.create(
-                Player.self, in: "items/players", body: ["user": uid, "name": name]
-            )
-            players = [created]
-        }
-    }
-
     // MARK: Sync
 
-    /// Pulls everything the current week needs. Pass `quiet: true` for
-    /// background polling so a dropped connection doesn't nag with alerts.
+    /// Pulls everything the current week needs. Name-based filtering happens
+    /// here, in Swift, so it's always exactly case-sensitive. Pass
+    /// `quiet: true` for background polling so a dropped connection doesn't
+    /// nag with alerts.
     func refresh(quiet: Bool = false) async {
         guard let client else { return }
         let week = Week.currentKey
@@ -179,7 +195,7 @@ final class AppState: ObservableObject {
 
         do {
             async let playersAsync = client.list(Player.self, from: "items/players", query: [
-                "fields": "id,user,name", "sort": "id", "limit": "10",
+                "fields": "id,name", "sort": "id", "limit": "10",
             ])
             async let tasksAsync = client.list(OwnTask.self, from: "items/own_tasks", query: [
                 "filter": Filter.eq("active", true),
@@ -189,7 +205,7 @@ final class AppState: ObservableObject {
             ])
             async let completionsAsync = client.list(TaskCompletion.self, from: "items/task_completions", query: [
                 "filter": Filter.eq("week_start", week),
-                "fields": "id,user,task,week_start,completed_on",
+                "fields": "id,player,task,week_start,completed_on",
                 "limit": "1000",
             ])
             async let competitionsAsync = client.list(CompetitionTask.self, from: "items/competition_tasks", query: [
@@ -215,7 +231,7 @@ final class AppState: ObservableObject {
             if let competition = loadedCompetition.first {
                 let claims = try await client.list(CompetitionClaim.self, from: "items/competition_claims", query: [
                     "filter": Filter.eq("task", competition.id),
-                    "fields": "id,task,user,claimed_at",
+                    "fields": "id,task,player,claimed_at",
                     "limit": "1",
                 ])
                 claim = claims.first
@@ -226,16 +242,17 @@ final class AppState: ObservableObject {
             if let question = loadedQuestion.first {
                 answers = try await client.list(Answer.self, from: "items/answers", query: [
                     "filter": Filter.eq("question", question.id),
-                    "fields": "id,question,user,body,updated_on",
+                    "fields": "id,question,player,body,updated_on",
                     "limit": "10",
                 ])
-                if let uid = userID {
-                    unseenNudges = try await client.list(Nudge.self, from: "items/nudges", query: [
-                        "filter": Filter.eq("to_user", uid, nullField: "seen_on"),
-                        "fields": "id,question,from_user,to_user,seen_on",
+                if !myName.isEmpty {
+                    let nudges = try await client.list(Nudge.self, from: "items/nudges", query: [
+                        "filter": Filter.eq("question", question.id),
+                        "fields": "id,question,from_player,to_player,seen_on",
                         "sort": "-id",
-                        "limit": "20",
+                        "limit": "50",
                     ])
+                    unseenNudges = nudges.filter { $0.toPlayer == myName && $0.seenOn == nil }
                 }
             } else {
                 answers = []
@@ -251,13 +268,13 @@ final class AppState: ObservableObject {
     // MARK: Actions
 
     func completeTask(_ task: OwnTask) async {
-        guard canComplete(task), let uid = userID, let client else { return }
+        guard canComplete(task), let client else { return }
         let body: [String: Any] = [
-            "user": uid,
+            "player": myName,
             "task": task.id,
             "week_start": Week.currentKey,
             "completed_on": Week.todayKey,
-            "dedupe_key": "\(uid):\(task.id):\(Week.todayKey)",
+            "dedupe_key": "\(myName):\(task.id):\(Week.todayKey)",
         ]
         do {
             let completion: TaskCompletion = try await client.create(
@@ -272,12 +289,11 @@ final class AppState: ObservableObject {
 
     func claimCompetition() async {
         guard let competition = competitionTask,
-              let uid = userID,
               let client,
               claim == nil
         else { return }
         let body: [String: Any] = [
-            "user": uid,
+            "player": myName,
             "task": competition.id,
             "dedupe_key": "task:\(competition.id)",
         ]
@@ -294,7 +310,7 @@ final class AppState: ObservableObject {
 
     func saveAnswer(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let question, let uid = userID, let client else { return }
+        guard !trimmed.isEmpty, let question, let client else { return }
         do {
             if let existing = myAnswer {
                 let updated: Answer = try await client.update(
@@ -303,10 +319,10 @@ final class AppState: ObservableObject {
                 answers = answers.map { $0.id == updated.id ? updated : $0 }
             } else {
                 let created: Answer = try await client.create(Answer.self, in: "items/answers", body: [
-                    "user": uid,
+                    "player": myName,
                     "question": question.id,
                     "body": trimmed,
-                    "dedupe_key": "\(question.id):\(uid)",
+                    "dedupe_key": "\(question.id):\(myName)",
                 ])
                 answers.append(created)
             }
@@ -317,11 +333,11 @@ final class AppState: ObservableObject {
     }
 
     func sendNudge() async {
-        guard let question, let uid = userID, let opponent, let client else { return }
+        guard let question, let client, !partnerName.isEmpty else { return }
         let body: [String: Any] = [
             "question": question.id,
-            "from_user": uid,
-            "to_user": opponent.user,
+            "from_player": myName,
+            "to_player": partnerName,
         ]
         do {
             _ = try await client.create(Nudge.self, in: "items/nudges", body: body)
@@ -342,7 +358,8 @@ final class AppState: ObservableObject {
     }
 
     /// Unique-violation errors mean the database already has what we tried to
-    /// write (both devices raced) — just resync rather than showing an error.
+    /// write (both devices raced, or we're already registered) — just resync
+    /// rather than showing an error.
     private func handleFailure(_ error: Error) {
         if let apiError = error as? APIError, apiError.isUniqueViolation {
             Task { await refresh(quiet: true) }

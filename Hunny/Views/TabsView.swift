@@ -77,7 +77,6 @@ struct NudgeBanner: View {
     }
 
     private var nudgerName: String {
-        guard let nudge = app.unseenNudges.first else { return "Your partner" }
-        return app.players.first { $0.user == nudge.fromUser }?.name ?? "Your partner"
+        app.unseenNudges.first?.fromPlayer ?? "Your partner"
     }
 }

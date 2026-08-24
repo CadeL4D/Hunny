@@ -83,7 +83,8 @@ struct QuestionView: View {
 
     private var theirAnswerCard: some View {
         Card {
-            Label("\(app.opponent?.name ?? "Player two")'s answer", systemImage: "person.crop.circle")
+            let partnerName = app.partnerName.isEmpty ? "Player two" : app.partnerName
+            Label("\(partnerName)'s answer", systemImage: "person.crop.circle")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -100,8 +101,7 @@ struct QuestionView: View {
                 .padding(.top, 6)
             } else {
                 VStack(spacing: 12) {
-                    Text(app.opponent.map { "\($0.name) hasn't answered yet" }
-                         ?? "Waiting for the other player to join")
+                    Text("\(partnerName) hasn't answered yet")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Button {
@@ -110,7 +110,6 @@ struct QuestionView: View {
                         Label("Send a nudge", systemImage: "bell")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(app.opponent == nil)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)

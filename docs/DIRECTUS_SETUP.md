@@ -1,9 +1,15 @@
 # Directus Setup for Hunny
 
-This guide creates everything Hunny needs on your Directus instance
-(the address is kept out of this public repo — CI injects it into builds from
-the `DIRECTUS_URL` repository secret): the collections, one role for the two
-players, the two player users, and the first week's content.
+This guide creates everything Hunny needs on your Directus instance: the
+collections, one role, and **a single service token**. That's the whole setup —
+nobody logs in anywhere.
+
+**How identity works instead:** on first launch each device types two names —
+"your name" and "their name". Both devices enter the same two names (swapped),
+and those exact strings are the players' identity. Matching is case-sensitive
+and happens inside the app, so your database's collation settings don't matter.
+The server address and the service token are baked into official builds from
+GitHub secrets and never appear in this repo.
 
 Written against the current Directus docs (Directus 11.x, Access Control with
 roles & policies) — key references:
@@ -30,21 +36,21 @@ default auto-increment integer primary key (`id`) for all of them.
 
 > **About unique constraints** — the Data Model UI can mark a *single field*
 > unique, but not a combination of fields. Hunny needs composite uniqueness
-> (e.g. "one completion per user per task per day", "one claim per task") to
+> (e.g. "one completion per player per task per day", "one claim per task") to
 > be race-proof when both devices write at the same moment. Each collection
 > below therefore has a `dedupe_key` string field marked **Unique**. The app
-> computes it (e.g. `<user>:<task>:<date>`); the second write hits the unique
+> computes it (e.g. `<player>:<task>:<date>`); the second write hits the unique
 > constraint and the app handles it gracefully. Don't edit these by hand.
 
-### `players` — one row per device/user
+### `players` — a name registry (drives the "waiting to join…" hint)
 
-| Field    | Type                    | Notes                                        |
-| -------- | ----------------------- | -------------------------------------------- |
-| `id`     | Integer (primary key)   | Auto-increment                               |
-| `user`   | M2O → `directus_users`  | Many-to-One, related collection `directus_users`. **Tick Unique.** |
-| `name`   | String                  | Display name shown in the app                |
+| Field       | Type                   | Notes                          |
+| ----------- | ---------------------- | ------------------------------ |
+| `id`        | Integer (primary key)  | Auto-increment                 |
+| `name`      | String                 | **Unique.** The exact player name |
+| `joined_on` | Timestamp              | Default: current date/time     |
 
-The app creates/updates its own row on first connect — you don't seed this.
+The app creates a row the first time a device connects. You don't seed this.
 
 ### `own_tasks` — the personal task list
 
@@ -60,14 +66,14 @@ The app creates/updates its own row on first connect — you don't seed this.
 
 ### `task_completions` — one row per completed point
 
-| Field           | Type                  | Notes                                        |
-| --------------- | --------------------- | -------------------------------------------- |
-| `id`            | Integer (primary key) | Auto-increment                               |
-| `user`          | M2O → `directus_users` | Who completed it                            |
-| `task`          | M2O → `own_tasks`     | The task                                      |
-| `week_start`    | Date                  | Monday of that week, `yyyy-MM-dd`             |
-| `completed_on`  | Date                  | The day it was completed                      |
-| `dedupe_key`    | String                | **Unique.** `<user>:<task>:<completed_on>`    |
+| Field           | Type                  | Notes                                          |
+| --------------- | --------------------- | ---------------------------------------------- |
+| `id`            | Integer (primary key) | Auto-increment                                 |
+| `player`        | String                | Player name, exactly as typed on their device  |
+| `task`          | M2O → `own_tasks`     | The task                                        |
+| `week_start`    | Date                  | Monday of that week, `yyyy-MM-dd`               |
+| `completed_on`  | Date                  | The day it was completed                        |
+| `dedupe_key`    | String                | **Unique.** `<player>:<task>:<completed_on>`    |
 
 ### `competition_tasks` — the weekly head-to-head
 
@@ -81,13 +87,13 @@ The app creates/updates its own row on first connect — you don't seed this.
 
 ### `competition_claims` — who won the head-to-head
 
-| Field        | Type                   | Notes                                        |
-| ------------ | ---------------------- | -------------------------------------------- |
-| `id`         | Integer (primary key)  | Auto-increment                               |
-| `task`       | M2O → `competition_tasks` | The week's task                          |
-| `user`       | M2O → `directus_users` | Winner                                       |
-| `claimed_at` | Timestamp              | Default: current date/time                   |
-| `dedupe_key` | String                 | **Unique.** `task:<task id>` — first write wins |
+| Field        | Type                   | Notes                                            |
+| ------------ | ---------------------- | ------------------------------------------------ |
+| `id`         | Integer (primary key)  | Auto-increment                                   |
+| `task`       | M2O → `competition_tasks` | The week's task                              |
+| `player`     | String                 | Winner's name                                    |
+| `claimed_at` | Timestamp              | Default: current date/time                       |
+| `dedupe_key` | String                 | **Unique.** `task:<task id>` — first write wins  |
 
 ### `questions` — question of the week
 
@@ -104,97 +110,85 @@ The app creates/updates its own row on first connect — you don't seed this.
 | ------------ | ---------------------- | -------------------------------------------- |
 | `id`         | Integer (primary key)  | Auto-increment                               |
 | `question`   | M2O → `questions`      |                                              |
-| `user`       | M2O → `directus_users` | Who answered                                  |
-| `body`       | Text                   | The answer                                    |
+| `player`     | String                 | Who answered                                 |
+| `body`       | Text                   | The answer                                   |
 | `updated_on` | Timestamp              | Timestamp with an **on-update trigger** (the field-creation flow offers an "Updated On" timestamp type; otherwise set default current timestamp) |
-| `dedupe_key` | String                 | **Unique.** `<question>:<user>`               |
+| `dedupe_key` | String                 | **Unique.** `<question>:<player>`            |
 
 ### `nudges` — "answer the question!" pokes
 
-| Field        | Type                   | Notes                              |
-| ------------ | ---------------------- | ---------------------------------- |
-| `id`         | Integer (primary key)  | Auto-increment                     |
-| `question`   | M2O → `questions`      |                                    |
-| `from_user`  | M2O → `directus_users` | Who nudged                         |
-| `to_user`    | M2O → `directus_users` | Who was nudged                     |
-| `seen_on`    | Timestamp              | Nullable — set when acknowledged   |
+| Field         | Type                  | Notes                              |
+| ------------- | --------------------- | ---------------------------------- |
+| `id`          | Integer (primary key) | Auto-increment                     |
+| `question`    | M2O → `questions`     |                                    |
+| `from_player` | String                | Who nudged                         |
+| `to_player`   | String                | Who was nudged                     |
+| `seen_on`     | Timestamp             | Nullable — set when acknowledged   |
 
 ---
 
 ## 2. Role & permissions
 
-Open **Settings → Access Control** (Directus 11: roles hold *policies*; creating
-a role creates its initial policy automatically — you can do everything from the
-role's permission grid).
+Open **Settings → Access Control** (Directus 11: roles hold *policies*;
+creating a role creates its initial policy automatically — you can do
+everything from the role's permission grid).
 
-Create a role **`Hunny Players`**:
+Create a role **`Hunny App`**:
 
 - **Administrator access**: off
-- **App access**: on (lets a player browse the Data Studio read-only-ish if you
-  allow; token auth works either way)
+- **App access**: off — this role exists purely for its token; nobody signs
+  into the Data Studio with it.
 
-Now configure permissions per collection. For each: set the action to
-**Use Custom**, open its panel, set **Item permissions** (the rule) and
-**Field presets** where noted. `$CURRENT_USER` is typed into the rule/preset
-value field as the dynamic variable.
+The app's single token speaks for both devices, and the app enforces which
+player each write belongs to — so permissions are simple, no per-item rules
+are needed:
 
-| Collection           | Action | Item permissions (rule)                     | Presets / notes                          |
-| -------------------- | ------ | ------------------------------------------- | ---------------------------------------- |
-| `players`            | Create | `user` **equals** `$CURRENT_USER`           | Preset `user` = `$CURRENT_USER`          |
-|                      | Read   | All items                                   | Fields: all                              |
-|                      | Update | `user` **equals** `$CURRENT_USER`           | Field permission: `name` only            |
-| `own_tasks`          | Read   | All items                                   |                                          |
-| `task_completions`   | Create | `user` **equals** `$CURRENT_USER`           | Preset `user` = `$CURRENT_USER`          |
-|                      | Read   | All items (drives the live scoreboard)      |                                          |
-| `competition_tasks`  | Read   | All items                                   | Admin writes these                       |
-| `competition_claims` | Create | `user` **equals** `$CURRENT_USER`           | Preset `user` = `$CURRENT_USER`          |
-|                      | Read   | All items                                   |                                          |
-| `questions`          | Read   | All items                                   | Admin writes these                       |
-| `answers`            | Create | `user` **equals** `$CURRENT_USER`           | Preset `user` = `$CURRENT_USER`          |
-|                      | Read   | All items                                   |                                          |
-|                      | Update | `user` **equals** `$CURRENT_USER`           | Field permission: `body` only            |
-| `nudges`             | Create | `from_user` **equals** `$CURRENT_USER`      | Preset `from_user` = `$CURRENT_USER`     |
-|                      | Read   | `to_user` **equals** `$CURRENT_USER`        |                                          |
-|                      | Update | `to_user` **equals** `$CURRENT_USER`        | Field permission: `seen_on` only         |
+| Collection           | Create | Read | Update | Delete |
+| -------------------- | ------ | ---- | ------ | ------ |
+| `players`            | ✅     | ✅   | —      | —      |
+| `own_tasks`          | —      | ✅   | —      | —      |
+| `task_completions`   | ✅     | ✅   | —      | —      |
+| `competition_tasks`  | —      | ✅   | —      | —      |
+| `competition_claims` | ✅     | ✅   | —      | —      |
+| `questions`          | —      | ✅   | —      | —      |
+| `answers`            | ✅     | ✅   | ✅ (own edits) | — |
+| `nudges`             | ✅     | ✅   | ✅ (`seen_on` only) | — |
 
-Leave every **Delete** action unset (no deletes from the app).
-
-Equivalent rule JSON (for the raw rule editor), e.g. `answers` update:
-
-```json
-{ "user": { "_eq": "$CURRENT_USER" } }
-```
+For the two Update actions, use **Use Custom** and limit **Field permissions**
+to `body` (answers) and `seen_on` (nudges). Everything else can be set to full
+"All items" access for the listed actions. No deletes from the app.
 
 ---
 
-## 3. The two player users
+## 3. The service token
 
-Open **User Directory** and create two users (one per device):
+One user, one token, shared by the app itself:
 
-1. **New User** → set a **Name** (this can match the display name), an email
-   (anything unique, e.g. `hunny-a@example.com` — password login isn't used),
-   role **Hunny Players**, **App access** enabled.
-2. Repeat for the second device (e.g. `hunny-b@example.com`).
-3. On each user's page, use **Generate Static Token** and copy the token
-   immediately. Each user gets one static token that never expires; it's stored
-   in `directus_users` and is the device's credential — keep it out of the repo.
+1. **User Directory → New User** — name it e.g. `Hunny App`, email anything
+   unique (e.g. `hunny-app@example.com`, password login is never used), role
+   **Hunny App**, app access disabled.
+2. On the user's page, use **Generate Static Token** and copy it immediately —
+   it's the app's only credential.
+3. Store it as the `DIRECTUS_TOKEN` secret in the Hunny repo
+   (**Settings → Secrets and variables → Actions → New repository secret**,
+   or `gh secret set DIRECTUS_TOKEN --repo CadeL4D/Hunny`). Official builds
+   inject it (base64-encoded) alongside the `DIRECTUS_URL` secret you've
+   already set.
 
-Device A gets user A's token, device B gets user B's token. Paste each into
-Hunny's setup screen along with the Directus URL and a display name. The app
-registers each user in `players` automatically.
+Without this secret, official builds compile and run but can't reach the API —
+the app will say so when you tap connect.
 
 ---
 
 ## 4. Seed this week's content
 
-Weeks key off the Monday date (`yyyy-MM-dd`). This week's key is
-**`2026-08-17`**; next week is `2026-08-24`. Only admin seeds content —
-either via **Content** module in the Data Studio or with curl:
+Weeks key off the Monday date (`yyyy-MM-dd`). Only admin seeds content —
+either via the **Content** module in the Data Studio or with curl:
 
 ```bash
 API=https://your-directus.example.com
 ADMIN_TOKEN=your_admin_static_token
-WEEK=2026-08-17
+WEEK=2026-08-24   # the Monday of the current week
 
 # Personal tasks (max_per_week: 1 = weekly, 4 = once a day up to 4×)
 curl -sX POST "$API/items/own_tasks" \
@@ -219,30 +213,33 @@ curl -sX POST "$API/items/questions" \
   with the new Monday date (the unique `week_start` blocks accidental doubles).
 - **Own tasks** carry over every week automatically — toggle `active` to
   retire/add tasks whenever you like.
-- Completions, claims, answers and nudges are all written by the app.
+- Players, completions, claims, answers and nudges are all written by the app.
 
 ---
 
 ## 5. Verify
 
-With a **player** token:
+With the **service** token:
 
 ```bash
-curl -s "$API/users/me?fields=id,first_name" -H "Authorization: Bearer $PLAYER_TOKEN"
-curl -s "$API/items/own_tasks" -H "Authorization: Bearer $PLAYER_TOKEN"
+curl -s "$API/items/own_tasks" -H "Authorization: Bearer $SERVICE_TOKEN"
 ```
 
-You should see the user's id and the task list. If item queries come back
-empty, re-check the role's Read permissions.
+You should see the seeded task list. If item queries come back empty,
+re-check the role's Read permissions.
 
 ## How the mechanics map to tables (for reference)
 
+- **Pairing** — each device registers its own name in `players` on first
+  connect; the partner's column in the app shows "waiting to join…" until a
+  row with the exact same name appears. If scores never show up for one side,
+  check that both devices spell both names identically, capitals included.
 - **Own tasks** → a `task_completions` row per point. The once-per-day rule is
   enforced by the `dedupe_key` unique index and by the app hiding the button
   once today's completion exists.
 - **Competition** → both devices POST a `competition_claims` row; the unique
   `dedupe_key` means only the first insert survives, so "whoever completed it
   first" is decided by the database, not by clocks or connectivity.
-- **Question** → one `answers` row per user per question; each device sees the
-  other's row only when it exists. A nudge is a `nudges` row that surfaces as
-  a banner on the other device until acknowledged.
+- **Question** → one `answers` row per player per question; each device sees
+  the other's row only when it exists. A nudge is a `nudges` row that surfaces
+  as a banner on the other device until acknowledged.

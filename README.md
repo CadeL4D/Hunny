@@ -19,14 +19,15 @@ Built with Swift and SwiftUI, designed to feel at home next to Apple's own apps.
 ## Getting started
 
 1. **Set up Directus** — follow [`docs/DIRECTUS_SETUP.md`](docs/DIRECTUS_SETUP.md) to
-   create the collections, role, and the two player users on your instance.
+   create the collections, the app role, and the service token on your instance.
 2. **Install the app** — grab the latest unsigned IPA from
    [Releases](https://github.com/CadeL4D/Hunny/releases) and sideload it with
    [AltStore](https://altstore.io), [SideStore](https://sidestore.io) or
    Sideloadly. Free Apple IDs re-sign the app for 7 days at a time; TrollStore users
    can install the fakesigned IPA directly.
-3. **Open the app** — enter your Directus URL, the static token for your user, and a
-   display name. Do the same on the second device with the *other* user's token.
+3. **Open the app** — type your name and your partner's name. Do the same on the
+   second device. The names must match across devices exactly — capitals count —
+   and that's the entire login.
 
 ## Building
 
@@ -45,13 +46,14 @@ open Hunny.xcodeproj
 as a build artifact. Push a tag to publish a Release:
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-The workflow expects a `DIRECTUS_URL` repository secret containing your Directus
-base URL. It's injected into the binary (base64-encoded) at build time and never
-appears in the repo or its history.
+The workflow expects two repository secrets: `DIRECTUS_URL` (your Directus base
+URL) and `DIRECTUS_TOKEN` (the app's service token). Both are injected into the
+binary (base64-encoded) at build time and never appear in the repo or its
+history.
 
 The workflow archives with code signing disabled, fakesigns with `ldid`, and packs
 `Payload/Hunny.app` into `Hunny.ipa` — no Apple Developer account or certificates
