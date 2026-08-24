@@ -64,7 +64,7 @@ anywhere in the pipeline.
 ```
 Hunny/
 ├── Hunny/                  # App source (SwiftUI)
-│   ├── Directus/           # REST client + keychain
+│   ├── Directus/           # REST client
 │   ├── State/              # AppState: sync, scoring, actions
 │   ├── Support/            # Week math, ISO dates, haptics
 │   ├── Views/              # Tasks, Compete, Question, setup, components

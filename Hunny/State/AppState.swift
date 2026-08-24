@@ -7,18 +7,14 @@ import SwiftUI
 /// There is no login. Each device is identified purely by the two names typed
 /// at setup ("your name" and "their name"), which must match across devices
 /// exactly — the app compares them case-sensitively, client-side. All API
-/// traffic uses a single app token injected at build time (or entered in
-/// Settings for custom builds).
+/// traffic uses the server address and token compiled into the build.
 @MainActor
 final class AppState: ObservableObject {
     // MARK: Configuration
 
-    private static let serverKey = "hunny.server-url"
-    private static let tokenKey = "hunny.token-override"
     private static let myNameKey = "hunny.my-name"
     private static let partnerNameKey = "hunny.partner-name"
 
-    @Published var serverURLString: String
     @Published var myName: String
     @Published var partnerName: String
 
@@ -42,20 +38,18 @@ final class AppState: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
-        serverURLString = defaults.string(forKey: Self.serverKey)
-            ?? ServerConfig.defaultBaseURLString ?? ""
         myName = defaults.string(forKey: Self.myNameKey) ?? ""
         partnerName = defaults.string(forKey: Self.partnerNameKey) ?? ""
     }
 
-    /// Token typed into Settings (used for custom/local builds). Official
-    /// builds carry the injected one instead.
-    var tokenOverride: String {
-        Keychain.load(Self.tokenKey) ?? ""
+    /// The server is fixed at build time — injected from the DIRECTUS_URL and
+    /// DIRECTUS_TOKEN secrets. Nothing server-related is user-editable.
+    private var serverURLString: String {
+        ServerConfig.defaultBaseURLString ?? ""
     }
 
     private var effectiveToken: String {
-        tokenOverride.isEmpty ? (ServerConfig.defaultToken ?? "") : tokenOverride
+        ServerConfig.defaultToken ?? ""
     }
 
     var isConfigured: Bool {
@@ -122,27 +116,17 @@ final class AppState: ObservableObject {
 
     // MARK: Connection
 
-    func saveConfiguration(url: String, token: String, myName: String, partnerName: String) {
-        serverURLString = url
+    func saveNames(myName: String, partnerName: String) {
         self.myName = myName
         self.partnerName = partnerName
-        UserDefaults.standard.set(url, forKey: Self.serverKey)
         UserDefaults.standard.set(myName, forKey: Self.myNameKey)
         UserDefaults.standard.set(partnerName, forKey: Self.partnerNameKey)
-        if token.isEmpty {
-            Keychain.delete(Self.tokenKey)
-        } else {
-            Keychain.save(token, for: Self.tokenKey)
-        }
     }
 
     func signOut() {
-        Keychain.delete(Self.tokenKey)
         let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: Self.serverKey)
         defaults.removeObject(forKey: Self.myNameKey)
         defaults.removeObject(forKey: Self.partnerNameKey)
-        serverURLString = ServerConfig.defaultBaseURLString ?? ""
         myName = ""
         partnerName = ""
         isReady = false
@@ -160,7 +144,7 @@ final class AppState: ObservableObject {
     func connect() async {
         guard isConfigured else { return }
         guard let client else {
-            errorMessage = "No access token. Official builds carry one automatically — for a custom build, enter a token in the Server section."
+            errorMessage = "This build has no server configured. Install an official build from the GitHub Releases page."
             return
         }
         isLoading = true
