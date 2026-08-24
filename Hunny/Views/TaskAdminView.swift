@@ -183,7 +183,7 @@ struct TaskFormView: View {
 
                 Section {
                     HStack(spacing: 12) {
-                        Image(systemName: icon.nonEmpty ?? "circle.dotted")
+                        Image(systemName: icon.isEmpty ? "circle.dotted" : icon)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 38, height: 38)
