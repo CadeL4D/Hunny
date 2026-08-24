@@ -186,14 +186,19 @@ final class DirectusClient {
         }
         let summary: String
         switch error {
-        case .keyNotFound(let key, let context):
-            summary = "missing '\(key.stringValue)' at \(path(context.codingPath))"
-        case .typeMismatch(let type, let context):
-            summary = "expected \(type) at \(path(context.codingPath))"
-        case .valueNotFound(let type, let context):
-            summary = "unexpected null for \(type) at \(path(context.codingPath))"
-        case .dataCorrupted(let context):
-            summary = context.debugDescription
+        case let decodingError as DecodingError:
+            switch decodingError {
+            case .keyNotFound(let key, let context):
+                summary = "missing '\(key.stringValue)' at \(path(context.codingPath))"
+            case .typeMismatch(let type, let context):
+                summary = "expected \(type) at \(path(context.codingPath))"
+            case .valueNotFound(let type, let context):
+                summary = "unexpected null for \(type) at \(path(context.codingPath))"
+            case .dataCorrupted(let context):
+                summary = context.debugDescription
+            @unknown default:
+                summary = String(describing: decodingError)
+            }
         default:
             summary = String(describing: error)
         }
