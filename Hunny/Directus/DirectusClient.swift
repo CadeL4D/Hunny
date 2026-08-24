@@ -100,7 +100,9 @@ final class DirectusClient {
     // MARK: Public surface
 
     func list<T: Decodable>(_ type: T.Type, from path: String, query: [String: String] = [:]) async throws -> [T] {
-        let envelope: Envelope<[T]> = try await get(path, query: query)
+        // Must go straight to sendEnvelope: routing through send would wrap
+        // the type in an extra Envelope<...> and every list decode would fail.
+        let envelope: Envelope<[T]> = try await sendEnvelope("GET", path, query: query, body: nil)
         return envelope.data
     }
 
@@ -113,10 +115,6 @@ final class DirectusClient {
     }
 
     // MARK: Transport
-
-    private func get<T: Decodable>(_ path: String, query: [String: String]) async throws -> T {
-        try await send("GET", path, query: query)
-    }
 
     private func send<T: Decodable>(
         _ method: String,
