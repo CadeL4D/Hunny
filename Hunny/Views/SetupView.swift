@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// First-run setup (also reused as the settings sheet). No login, no server
 /// details: each device types the same two names — "yours" and "theirs" — and
@@ -14,6 +15,7 @@ struct SetupView: View {
     @State private var myName = ""
     @State private var partnerName = ""
     @State private var loaded = false
+    @State private var copiedDiagnostics = false
 
     var body: some View {
         Form {
@@ -50,6 +52,22 @@ struct SetupView: View {
             }
 
             if editing {
+                Section("Diagnostics") {
+                    Button {
+                        UIPasteboard.general.string = DiagnosticLog.shared.formatted()
+                        copiedDiagnostics = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            copiedDiagnostics = false
+                        }
+                    } label: {
+                        Text(copiedDiagnostics ? "Copied ✓" : "Copy diagnostics log")
+                    }
+                } header: {
+                    Text("Diagnostics")
+                } footer: {
+                    Text("Copies the last API requests and any errors to the clipboard — paste it into a bug report.")
+                }
+
                 Section {
                     Button("Reset configuration", role: .destructive) {
                         app.signOut()

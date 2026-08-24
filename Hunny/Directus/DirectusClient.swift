@@ -21,8 +21,14 @@ struct APIError: LocalizedError {
             let errors: [Detail]?
         }
         let detail = try? JSONDecoder().decode(Failure.self, from: data)
-        let message = detail?.errors?.compactMap(\.message).first
-        return APIError(status: status, message: message ?? "Request failed (HTTP \(status))")
+        if let message = detail?.errors?.compactMap(\.message).first {
+            return APIError(status: status, message: message)
+        }
+        // Not a Directus error envelope — show what the body actually was
+        // (proxy block pages, HTML, empty bodies…) instead of a bare status.
+        let snippet = String(data: data.prefix(200), encoding: .utf8)
+            .map { " — \($0)" } ?? " — <\(data.count) non-UTF8 bytes>"
+        return APIError(status: status, message: "Request failed (HTTP \(status))\(snippet)")
     }
 }
 
@@ -147,14 +153,53 @@ final class DirectusClient {
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         }
 
+        let started = Date()
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw APIError(status: -1, message: "No response from the server")
         }
+        let elapsed = String(format: "%.0fms", Date().timeIntervalSince(started) * 1000)
+        let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? "no content-type"
+
         guard (200..<300).contains(http.statusCode) else {
-            throw APIError.from(status: http.statusCode, data: data)
+            let error = APIError.from(status: http.statusCode, data: data)
+            DiagnosticLog.shared.record("\(method) \(path) → \(http.statusCode) [\(contentType)] \(elapsed) — \(error.message)")
+            throw error
         }
-        return try DirectusClient.decoder.decode(Envelope<T>.self, from: data)
+
+        do {
+            let envelope = try DirectusClient.decoder.decode(Envelope<T>.self, from: data)
+            DiagnosticLog.shared.record("\(method) \(path) → \(http.statusCode) [\(contentType)] \(elapsed) · \(data.count)B")
+            return envelope
+        } catch {
+            let detail = Self.describe(error, data: data)
+            DiagnosticLog.shared.record("\(method) \(path) → \(http.statusCode) [\(contentType)] \(elapsed) — DECODE FAILED · \(detail)")
+            throw APIError(status: http.statusCode, message: "\(method) \(path): \(detail)")
+        }
+    }
+
+    /// Turns a DecodingError into something a human can act on: what was
+    /// expected, where, and a preview of the body that didn't match.
+    private static func describe(_ error: DecodingError, data: Data) -> String {
+        func path(_ keys: [CodingKey]) -> String {
+            keys.isEmpty ? "root" : keys.map(\.stringValue).joined(separator: ".")
+        }
+        let summary: String
+        switch error {
+        case .keyNotFound(let key, let context):
+            summary = "missing '\(key.stringValue)' at \(path(context.codingPath))"
+        case .typeMismatch(let type, let context):
+            summary = "expected \(type) at \(path(context.codingPath))"
+        case .valueNotFound(let type, let context):
+            summary = "unexpected null for \(type) at \(path(context.codingPath))"
+        case .dataCorrupted(let context):
+            summary = context.debugDescription
+        @unknown default:
+            summary = String(describing: error)
+        }
+        let preview = String(data: data.prefix(300), encoding: .utf8)
+            .map { " body: \($0)" } ?? " body: <\(data.count) non-UTF8 bytes>"
+        return summary + preview
     }
 }
 

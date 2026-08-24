@@ -40,6 +40,9 @@ final class AppState: ObservableObject {
         let defaults = UserDefaults.standard
         myName = defaults.string(forKey: Self.myNameKey) ?? ""
         partnerName = defaults.string(forKey: Self.partnerNameKey) ?? ""
+        DiagnosticLog.shared.record(
+            "launch · me=\(myName.isEmpty ? "—" : myName) partner=\(partnerName.isEmpty ? "—" : partnerName) server=\(normalizedBaseURL?.absoluteString ?? "none")"
+        )
     }
 
     /// The server is fixed at build time — injected from the DIRECTUS_URL and
