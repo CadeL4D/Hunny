@@ -35,7 +35,7 @@ final class AppState: ObservableObject {
     private var pollTask: Task<Void, Never>?
 
     init() {
-        serverURLString = UserDefaults.standard.string(forKey: Self.serverKey) ?? "https://your-directus.example.com"
+        serverURLString = UserDefaults.standard.string(forKey: Self.serverKey) ?? ServerConfig.defaultBaseURLString ?? ""
         token = Keychain.load(Self.tokenKey) ?? ""
         displayName = UserDefaults.standard.string(forKey: Self.nameKey) ?? ""
     }
@@ -110,7 +110,7 @@ final class AppState: ObservableObject {
         Keychain.delete(Self.tokenKey)
         UserDefaults.standard.removeObject(forKey: Self.serverKey)
         UserDefaults.standard.removeObject(forKey: Self.nameKey)
-        serverURLString = "https://your-directus.example.com"
+        serverURLString = ServerConfig.defaultBaseURLString ?? ""
         token = ""
         displayName = ""
         isReady = false

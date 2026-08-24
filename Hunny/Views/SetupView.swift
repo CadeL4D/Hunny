@@ -23,7 +23,7 @@ struct SetupView: View {
             } header: {
                 Text("Server")
             } footer: {
-                Text("Where your Directus instance lives, e.g. https://your-directus.example.com")
+                Text("Where your Directus instance lives. Official builds come pre-filled.")
             }
 
             Section {

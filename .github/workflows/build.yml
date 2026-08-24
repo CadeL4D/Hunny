@@ -27,6 +27,17 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # The Directus URL never lives in the repo. CI pulls it from the
+      # DIRECTUS_URL secret and writes it (base64-encoded) into ServerConfig,
+      # which gets compiled into the binary. The committed file stays empty.
+      - name: Inject server URL from secret
+        env:
+          DIRECTUS_URL: ${{ secrets.DIRECTUS_URL }}
+        run: |
+          set -euo pipefail
+          ENCODED=$(printf '%s' "$DIRECTUS_URL" | base64)
+          printf 'import Foundation\n\nenum ServerConfig {\n    static let encodedDefaultURL: String? = "%s"\n\n    static var defaultBaseURLString: String? {\n        encodedDefaultURL\n            .flatMap { Data(base64Encoded: $0) }\n            .flatMap { String(data: $0, encoding: .utf8) }\n    }\n}\n' "$ENCODED" > Hunny/Generated/ServerConfig.swift
+
       - name: Show toolchain
         run: |
           xcodebuild -version

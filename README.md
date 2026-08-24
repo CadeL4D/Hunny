@@ -45,9 +45,13 @@ open Hunny.xcodeproj
 as a build artifact. Push a tag to publish a Release:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.2
+git push origin v0.1.2
 ```
+
+The workflow expects a `DIRECTUS_URL` repository secret containing your Directus
+base URL. It's injected into the binary (base64-encoded) at build time and never
+appears in the repo or its history.
 
 The workflow archives with code signing disabled, fakesigns with `ldid`, and packs
 `Payload/Hunny.app` into `Hunny.ipa` — no Apple Developer account or certificates

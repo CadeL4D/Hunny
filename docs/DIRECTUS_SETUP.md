@@ -1,8 +1,9 @@
 # Directus Setup for Hunny
 
 This guide creates everything Hunny needs on your Directus instance
-(`https://your-directus.example.com`): the collections, one role for the two players,
-the two player users, and the first week's content.
+(the address is kept out of this public repo — CI injects it into builds from
+the `DIRECTUS_URL` repository secret): the collections, one role for the two
+players, the two player users, and the first week's content.
 
 Written against the current Directus docs (Directus 11.x, Access Control with
 roles & policies) — key references:
