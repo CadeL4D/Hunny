@@ -1,0 +1,38 @@
+name: Hunny
+options:
+  bundleIdPrefix: uk.opcw032522
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Hunny:
+    type: application
+    platform: iOS
+    sources:
+      - path: Hunny
+    info:
+      path: Hunny/Info.plist
+      properties:
+        CFBundleDisplayName: Hunny
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.opcw032522.hunny
+schemes:
+  Hunny:
+    build:
+      targets:
+        Hunny: all
+    run:
+      config: Debug
+    archive:
+      config: Release
