@@ -70,7 +70,7 @@ The app creates a row the first time a device connects. You don't seed this.
 | --------------- | --------------------- | ---------------------------------------------- |
 | `id`            | Integer (primary key) | Auto-increment                                 |
 | `player`        | String                | Player name, exactly as typed on their device  |
-| `task`          | M2O → `own_tasks`     | The task                                        |
+| `task`          | M2O → `own_tasks`     | The task. If you delete an `own_tasks` row, Directus nulls this field on its completions — the app tolerates that (the point still counts), but prefer retiring a task (`active` off) over deleting it |
 | `week_start`    | Date                  | Monday of that week, `yyyy-MM-dd`               |
 | `completed_on`  | Date                  | The day it was completed                        |
 | `dedupe_key`    | String                | **Unique.** `<player>:<task>:<completed_on>`    |

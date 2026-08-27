@@ -31,7 +31,11 @@ struct OwnTask: Codable, Identifiable, Hashable {
 struct TaskCompletion: Codable, Identifiable, Hashable {
     let id: Int
     let player: String
-    let task: Int
+    // M2O → own_tasks: deleting a task row in Directus nulls this out, but
+    // the point was still earned — keep decoding (and counting) the row.
+    // Null-task rows match no card and only count toward the weekly score,
+    // same as the web port.
+    let task: Int?
     var weekStart: String
     var completedOn: String
 
