@@ -1,6 +1,7 @@
 # 🍯 Hunny
 
 [![Build](https://github.com/CadeL4D/Hunny/actions/workflows/build.yml/badge.svg)](https://github.com/CadeL4D/Hunny/actions/workflows/build.yml)
+[![Pages](https://github.com/CadeL4D/Hunny/actions/workflows/pages.yml/badge.svg)](https://github.com/CadeL4D/Hunny/actions/workflows/pages.yml)
 
 Hunny is a small, polished iOS app for two people who share a week together. It syncs
 through your own [Directus](https://directus.io) instance and keeps score across three
@@ -59,6 +60,29 @@ The workflow archives with code signing disabled, fakesigns with `ldid`, and pac
 `Payload/Hunny.app` into `Hunny.ipa` — no Apple Developer account or certificates
 anywhere in the pipeline.
 
+## Web version (GitHub Pages)
+
+`web/` is a dependency-free HTML/CSS/JS port of the SwiftUI app — same screens,
+same Directus collections, same scoring, and the same hidden task editor (five
+taps on your profile avatar). Every push to `main` that touches `web/` deploys it
+to GitHub Pages via [`.github/workflows/pages.yml`](.github/workflows/pages.yml),
+which injects the server URL and token from the same `DIRECTUS_URL` /
+`DIRECTUS_TOKEN` secrets at deploy time (the committed `web/config.js` stays
+empty, so neither value ever appears in the repo).
+
+To run it locally, copy the folder out of the repo, fill in a real `config.js`
+and serve it — the API allows cross-origin requests:
+
+```bash
+cp -r web /tmp/hunny-web
+$EDITOR /tmp/hunny-web/config.js   # baseURL + token
+cd /tmp/hunny-web && python3 -m http.server
+```
+
+Known differences from the iOS app: SF Symbols render as emoji (a curated set)
+or SVGs, haptics become vibration where the browser supports it, and pull-to-
+refresh is touch-only (desktop gets the 20-second polling).
+
 ## Project structure
 
 ```
@@ -69,9 +93,10 @@ Hunny/
 │   ├── Support/            # Week math, ISO dates, haptics
 │   ├── Views/              # Tasks, Compete, Question, setup, components
 │   └── Models.swift        # Codable models mirroring the Directus schema
+├── web/                    # HTML/JS port, deployed to GitHub Pages
 ├── docs/DIRECTUS_SETUP.md  # Everything to create on your Directus instance
 ├── project.yml             # XcodeGen project definition
-└── .github/workflows/      # Unsigned IPA build + release workflow
+└── .github/workflows/      # Unsigned IPA build + Pages deploy workflows
 ```
 
 ## How scoring works
