@@ -1,15 +1,31 @@
 import SwiftUI
 
-/// Hidden task editor: create, edit and retire tasks straight from the app,
-/// so day-to-day changes never need the Directus Data Studio. Opened by
-/// tapping your own profile avatar five times in the score header.
+/// Hidden task editor: create, edit and retire personal tasks and the weekly
+/// head-to-head straight from the app, so day-to-day changes never need the
+/// Directus Data Studio. Opened by tapping your own profile avatar five times
+/// in the score header.
 struct TaskAdminView: View {
     @EnvironmentObject private var app: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var isLoading = false
     @State private var loadError: String?
-    @State private var editingTask: OwnTask?
-    @State private var showingNewTaskForm = false
+    @State private var activeSheet: AdminSheet?
+
+    /// What the editor is currently editing. `competition(nil)` means a
+    /// brand-new head-to-head; `competition(task)` edits this week's row.
+    private enum AdminSheet: Identifiable {
+        case newOwnTask
+        case editOwnTask(OwnTask)
+        case competition(CompetitionTask?)
+
+        var id: String {
+            switch self {
+            case .newOwnTask: return "new-own-task"
+            case .editOwnTask(let task): return "edit-own-task-\(task.id)"
+            case .competition(let existing): return "competition-\(existing?.id ?? 0)"
+            }
+        }
+    }
 
     private var activeTasks: [OwnTask] { app.allTasks.filter { $0.active ?? true } }
     private var retiredTasks: [OwnTask] { app.allTasks.filter { !($0.active ?? true) } }
@@ -25,6 +41,15 @@ struct TaskAdminView: View {
                         Button("Try Again") {
                             Task { await load() }
                         }
+                    }
+                }
+
+                Section("This Week's Head-to-Head") {
+                    if let competition = app.competitionTask {
+                        competitionRow(competition)
+                    } else {
+                        Text("None this week — add one with +.")
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -57,19 +82,63 @@ struct TaskAdminView: View {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingNewTaskForm = true
+                    Menu {
+                        Button {
+                            activeSheet = .newOwnTask
+                        } label: {
+                            Label("Personal task", systemImage: "checklist")
+                        }
+                        Button {
+                            activeSheet = .competition(app.competitionTask)
+                        } label: {
+                            Label("Head-to-head task", systemImage: "flag.checkered")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
                 }
             }
-            .sheet(isPresented: $showingNewTaskForm) { TaskFormView(task: nil) }
-            .sheet(item: $editingTask) { task in
-                TaskFormView(task: task)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .newOwnTask:
+                    TaskFormView(task: nil)
+                case .editOwnTask(let task):
+                    TaskFormView(task: task)
+                case .competition(let existing):
+                    CompetitionFormView(competition: existing)
+                }
             }
             .task { await load() }
         }
+    }
+
+    private func competitionRow(_ competition: CompetitionTask) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "flag.checkered")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(Theme.accentGradient, in: Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(competition.title)
+                    .font(.body.weight(.semibold))
+                Text(competitionSubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { activeSheet = .competition(competition) }
+    }
+
+    private var competitionSubtitle: String {
+        if let claim = app.claim {
+            return "Claimed by \(claim.player) · repeats weekly"
+        }
+        return "Unclaimed · repeats weekly"
     }
 
     private func row(_ task: OwnTask) -> some View {
@@ -100,7 +169,7 @@ struct TaskAdminView: View {
             .labelsHidden()
         }
         .contentShape(Rectangle())
-        .onTapGesture { editingTask = task }
+        .onTapGesture { activeSheet = .editOwnTask(task) }
     }
 
     private func frequencyLabel(_ maxPerWeek: Int) -> String {
@@ -273,6 +342,84 @@ struct TaskFormView: View {
                     maxPerWeek: maxPerWeek
                 )
             }
+            Haptics.success()
+            dismiss()
+        } catch {
+            saveError = error.localizedDescription
+            isSaving = false
+        }
+    }
+}
+
+/// Create-or-edit form for the weekly head-to-head. `competition == nil`
+/// means no row exists yet this week; otherwise the current row is edited in
+/// place and future weeks inherit the change via carry-forward.
+struct CompetitionFormView: View {
+    @EnvironmentObject private var app: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    let competition: CompetitionTask?
+
+    @State private var title: String
+    @State private var detail: String
+    @State private var isSaving = false
+    @State private var saveError: String?
+
+    init(competition: CompetitionTask?) {
+        self.competition = competition
+        _title = State(initialValue: competition?.title ?? "")
+        _detail = State(initialValue: competition?.detail ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Title", text: $title)
+                        .submitLabel(.done)
+                    TextField("Detail (optional)", text: $detail, axis: .vertical)
+                        .lineLimit(2...4)
+                } footer: {
+                    Text("First to finish it claims the win and a bonus point. It repeats every week until you change it here.")
+                }
+
+                if let saveError {
+                    Section {
+                        Text(saveError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle(competition == nil ? "New Head-to-Head" : "Edit Head-to-Head")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        Task { await save() }
+                    }
+                    .disabled(isSaving || trimmedTitle.isEmpty)
+                }
+            }
+            .disabled(isSaving)
+        }
+    }
+
+    private var trimmedTitle: String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func save() async {
+        guard !trimmedTitle.isEmpty else { return }
+        isSaving = true
+        do {
+            try await app.saveCompetition(
+                title: trimmedTitle,
+                detail: detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
             Haptics.success()
             dismiss()
         } catch {

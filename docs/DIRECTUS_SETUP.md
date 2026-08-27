@@ -148,18 +148,19 @@ are needed:
 | `players`            | ✅     | ✅   | —      | —      |
 | `own_tasks`          | ✅     | ✅   | ✅ (task editor fields) | —      |
 | `task_completions`   | ✅     | ✅   | —      | —      |
-| `competition_tasks`  | —      | ✅   | —      | —      |
+| `competition_tasks`  | ✅     | ✅   | ✅ (title, detail) | —      |
 | `competition_claims` | ✅     | ✅   | —      | —      |
 | `questions`          | —      | ✅   | —      | —      |
 | `answers`            | ✅     | ✅   | ✅ (own edits) | — |
 | `nudges`             | ✅     | ✅   | ✅ (`seen_on` only) | — |
 
-For the three Update actions, use **Use Custom** and limit **Field permissions**
-to `body` (answers), `seen_on` (nudges), and `title, detail, icon, max_per_week,
-sort, active` (own_tasks — used by the app's hidden task editor, opened by
-tapping your profile avatar five times on the score header). Everything else
-can be set to full "All items" access for the listed actions. No deletes from
-the app — retire a task by flipping `active` off instead.
+For the four Update actions, use **Use Custom** and limit **Field permissions**
+to `body` (answers), `seen_on` (nudges), `title, detail, icon, max_per_week,
+sort, active` (own_tasks), and `title, detail` (competition_tasks) — the last
+two are used by the app's hidden task editor, opened by tapping your profile
+avatar five times on the score header. Everything else can be set to full
+"All items" access for the listed actions. No deletes from the app — retire a
+task by flipping `active` off instead.
 
 ---
 
@@ -212,8 +213,12 @@ curl -sX POST "$API/items/questions" \
 
 ### Weekly rhythm
 
-- **Each new week**: add one `competition_tasks` row and one `questions` row
-  with the new Monday date (the unique `week_start` blocks accidental doubles).
+- **Head-to-head**: set it once in the app's hidden editor — each new week the
+  app automatically copies the latest `competition_tasks` row forward (the
+  unique `week_start` stops both devices doubling it). Hand-added rows work
+  too; the app simply uses the newest week's.
+- **Questions** still need one row per week with the new Monday date (the
+  unique `week_start` blocks accidental doubles).
 - **Own tasks** carry over every week automatically — toggle `active` to
   retire/add tasks whenever you like.
 - Players, completions, claims, answers and nudges are all written by the app.

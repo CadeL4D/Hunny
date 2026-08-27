@@ -229,6 +229,7 @@ final class AppState: ObservableObject {
                 claim = claims.first
             } else {
                 claim = nil
+                await carryForwardCompetition()
             }
 
             if let question = loadedQuestion.first {
@@ -297,6 +298,57 @@ final class AppState: ObservableObject {
     private func reloadAfterTaskChange() async {
         try? await loadAllTasks()
         await refresh(quiet: true)
+    }
+
+    /// Create or edit this week's head-to-head. Each week gets its own row
+    /// (claims hang off the row), but edits persist into future weeks via
+    /// `carryForwardCompetition()`.
+    func saveCompetition(title: String, detail: String) async throws {
+        guard let client else {
+            throw APIError(status: -1, message: "No server connection")
+        }
+        var body: [String: Any] = [
+            "title": title,
+            "detail": detail.isEmpty ? NSNull() : detail,
+        ]
+        if let existing = competitionTask {
+            _ = try await client.update(
+                CompetitionTask.self, "items/competition_tasks/\(existing.id)", body: body
+            )
+        } else {
+            body["week_start"] = Week.currentKey
+            _ = try await client.create(CompetitionTask.self, in: "items/competition_tasks", body: body)
+        }
+        await refresh(quiet: true)
+    }
+
+    /// Keeps the head-to-head going without anyone re-adding it each week: if
+    /// this week has no row yet, copy the most recent one forward. A unique
+    /// violation just means the partner's device won the race — the next
+    /// refresh picks up its row. Best-effort; never blocks a refresh.
+    private func carryForwardCompetition() async {
+        guard let client else { return }
+        do {
+            let previous = try await client.list(CompetitionTask.self, from: "items/competition_tasks", query: [
+                "filter": Filter.json(["week_start": ["_lte": Week.currentKey]]),
+                "fields": "id,title,detail,week_start",
+                "sort": "-week_start",
+                "limit": "1",
+            ])
+            guard let latest = previous.first, latest.weekStart != Week.currentKey else { return }
+            var body: [String: Any] = [
+                "title": latest.title,
+                "week_start": Week.currentKey,
+            ]
+            if let detail = latest.detail { body["detail"] = detail }
+            competitionTask = try await client.create(
+                CompetitionTask.self, in: "items/competition_tasks", body: body
+            )
+        } catch let error as APIError where error.isUniqueViolation {
+            // Partner device copied it first.
+        } catch {
+            DiagnosticLog.shared.record("carry-forward skipped: \(error.localizedDescription)")
+        }
     }
 
     // MARK: Actions
