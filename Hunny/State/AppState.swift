@@ -241,14 +241,14 @@ final class AppState: ObservableObject {
 
             if let question = loadedQuestion.first {
                 answers = try await client.list(Answer.self, from: "items/answers", query: [
-                    "filter": Filter.eq("question", question.id),
-                    "fields": "id,question,player,body,updated_on",
+                    "filter": Filter.eq("questions", question.id),
+                    "fields": "id,questions,player,body,updated_on",
                     "limit": "10",
                 ])
                 if !myName.isEmpty {
                     let nudges = try await client.list(Nudge.self, from: "items/nudges", query: [
-                        "filter": Filter.eq("question", question.id),
-                        "fields": "id,question,from_player,to_player,seen_on",
+                        "filter": Filter.eq("questions", question.id),
+                        "fields": "id,questions,from_player,to_player,seen_on",
                         "sort": "-id",
                         "limit": "50",
                     ])
@@ -418,7 +418,7 @@ final class AppState: ObservableObject {
             } else {
                 let created: Answer = try await client.create(Answer.self, in: "items/answers", body: [
                     "player": myName,
-                    "question": question.id,
+                    "questions": question.id,
                     "body": trimmed,
                     "dedupe_key": "\(question.id):\(myName)",
                 ])
@@ -433,7 +433,7 @@ final class AppState: ObservableObject {
     func sendNudge() async {
         guard let question, let client, !partnerName.isEmpty else { return }
         let body: [String: Any] = [
-            "question": question.id,
+            "questions": question.id,
             "from_player": myName,
             "to_player": partnerName,
         ]

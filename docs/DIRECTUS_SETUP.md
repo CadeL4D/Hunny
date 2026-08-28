@@ -109,7 +109,7 @@ The app creates a row the first time a device connects. You don't seed this.
 | Field        | Type                   | Notes                                        |
 | ------------ | ---------------------- | -------------------------------------------- |
 | `id`         | Integer (primary key)  | Auto-increment                               |
-| `question`   | M2O → `questions`      |                                              |
+| `questions`  | M2O → `questions`      | Named plural, to match the live server       |
 | `player`     | String                 | Who answered                                 |
 | `body`       | Text                   | The answer                                   |
 | `updated_on` | Timestamp              | Timestamp with an **on-update trigger** (the field-creation flow offers an "Updated On" timestamp type; otherwise set default current timestamp) |
@@ -120,7 +120,7 @@ The app creates a row the first time a device connects. You don't seed this.
 | Field         | Type                  | Notes                              |
 | ------------- | --------------------- | ---------------------------------- |
 | `id`          | Integer (primary key) | Auto-increment                     |
-| `question`    | M2O → `questions`     |                                    |
+| `questions`   | M2O → `questions`     | Named plural, to match the live server |
 | `from_player` | String                | Who nudged                         |
 | `to_player`   | String                | Who was nudged                     |
 | `seen_on`     | Timestamp             | Nullable — set when acknowledged   |

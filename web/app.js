@@ -491,14 +491,14 @@
 
       if (app.question) {
         app.answers = await client.list('items/answers', {
-          filter: Filter.eq('question', app.question.id),
-          fields: 'id,question,player,body,updated_on',
+          filter: Filter.eq('questions', app.question.id),
+          fields: 'id,questions,player,body,updated_on',
           limit: '10',
         });
         if (app.myName !== '') {
           const nudges = await client.list('items/nudges', {
-            filter: Filter.eq('question', app.question.id),
-            fields: 'id,question,from_player,to_player,seen_on',
+            filter: Filter.eq('questions', app.question.id),
+            fields: 'id,questions,from_player,to_player,seen_on',
             sort: '-id',
             limit: '50',
           });
@@ -640,7 +640,7 @@
       } else {
         const created = await client.create('items/answers', {
           player: app.myName,
-          question: app.question.id,
+          questions: app.question.id,
           body: trimmed,
           dedupe_key: app.question.id + ':' + app.myName,
         });
@@ -657,7 +657,7 @@
     if (!app.question || !hasClient() || app.partnerName === '') return;
     try {
       await client.create('items/nudges', {
-        question: app.question.id,
+        questions: app.question.id,
         from_player: app.myName,
         to_player: app.partnerName,
       });

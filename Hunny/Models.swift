@@ -89,7 +89,8 @@ struct Answer: Codable, Identifiable, Hashable {
     var updatedAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, question, player, body
+        case id, player, body
+        case question = "questions" // live DB field is plural
         case updatedAt = "updated_on"
     }
 }
@@ -102,7 +103,8 @@ struct Nudge: Codable, Identifiable, Hashable {
     var seenOn: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, question
+        case id
+        case question = "questions" // live DB field is plural
         case fromPlayer = "from_player"
         case toPlayer = "to_player"
         case seenOn = "seen_on"
