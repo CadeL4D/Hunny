@@ -4,6 +4,10 @@ import SwiftUI
 struct HunnyApp: App {
     @StateObject private var app = AppState()
 
+    init() {
+        Notifications.installDelegate()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

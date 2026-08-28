@@ -133,6 +133,68 @@
     warning() { this.vibrate([30, 60, 30]); },
   };
 
+  // MARK: Notifications (Support/Notifications.swift)
+  // Daily 7:00 question ping and 19:00 tasks check-in, plus an immediate
+  // alert when a nudge arrives. Browsers can't wake a closed page, so these
+  // fire while the app is actually open (same for an iOS home-screen web
+  // app) — the native app's local notifications cover the closed case.
+  // requestPermission must run inside the connect tap for iOS Safari.
+
+  const Notify = {
+    supported: 'Notification' in window,
+    timers: [],
+    alertedNudges: new Set(),
+
+    async requestIfNeeded() {
+      if (!this.supported || Notification.permission !== 'default') return;
+      try { await Notification.requestPermission(); } catch (_) { /* unsupported */ }
+    },
+
+    granted() { return this.supported && Notification.permission === 'granted'; },
+
+    // Timers only run while the page is alive, so re-arm on every
+    // visibility change; the 19:00 body reads the latest nudge state.
+    scheduleDaily() {
+      if (!this.granted()) return;
+      this.timers.forEach(clearTimeout);
+      this.timers = [];
+      this.arm(7, 'This week\u2019s question 🍯', 'Answer it, then see what your partner said.');
+      const nudger = app.unseenNudges.length
+        ? (app.unseenNudges[0].from_player || 'Your partner')
+        : null;
+      this.arm(19, 'Tasks check-in 🐝', nudger
+        ? nudger + ' nudged you about this week\u2019s question — and there may be tasks left today.'
+        : 'Any tasks left today? Points don\u2019t earn themselves.');
+    },
+
+    arm(hour, title, body) {
+      const at = new Date();
+      at.setHours(hour, 0, 0, 0);
+      if (at <= new Date()) at.setDate(at.getDate() + 1);
+      this.timers.push(setTimeout(() => {
+        this.show(title, body);
+        this.scheduleDaily();
+      }, at - new Date()));
+    },
+
+    nudgeAlert(from, id) {
+      if (!this.granted() || this.alertedNudges.has(id)) return;
+      this.alertedNudges.add(id);
+      this.show((from || 'Your partner') + ' nudged you 🐝',
+        'They\u2019re waiting on your answer to this week\u2019s question.');
+    },
+
+    show(title, body) {
+      try { new Notification(title, { body }); } catch (_) { /* no SW, some browsers */ }
+    },
+
+    cancel() {
+      this.timers.forEach(clearTimeout);
+      this.timers = [];
+      this.alertedNudges.clear();
+    },
+  };
+
   // MARK: APIError + DirectusClient (Directus/DirectusClient.swift)
 
   class APIError extends Error {
@@ -341,6 +403,7 @@
     app.sheetStack = [];
     app.settingsDraft = null;
     app.form = null;
+    Notify.cancel();
     stopPolling();
   }
 
@@ -363,6 +426,8 @@
       }
       app.isReady = true;
       startPolling();
+      await Notify.requestIfNeeded();
+      Notify.scheduleDaily();
       await refresh();
     } catch (error) {
       app.errorMessage = "Couldn't connect: " + error.message;
@@ -438,6 +503,7 @@
             limit: '50',
           });
           app.unseenNudges = nudges.filter((n) => n.to_player === app.myName && n.seen_on == null);
+          app.unseenNudges.forEach((n) => Notify.nudgeAlert(n.from_player, n.id));
         }
       } else {
         app.answers = [];
@@ -643,6 +709,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       startPolling();
+      Notify.scheduleDaily();
       refresh(true);
     } else {
       stopPolling();
@@ -1462,6 +1529,7 @@
       case 'setup-connect': {
         const d = app.settingsDraft || { myName: '', partnerName: '' };
         saveNames(d.myName.trim(), d.partnerName.trim());
+        Notify.requestIfNeeded(); // inside the tap: iOS Safari needs the gesture
         connect();
         return;
       }

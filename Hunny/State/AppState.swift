@@ -39,6 +39,9 @@ final class AppState: ObservableObject {
     @Published private(set) var allTasks: [OwnTask] = []
 
     private var pollTask: Task<Void, Never>?
+    /// Nudges we've already fired a local notification for — stops the 20s
+    /// poll from re-alerting on the same unseen nudge all week.
+    private var nudgeAlertIDs = Set<Int>()
 
     init() {
         let defaults = UserDefaults.standard
@@ -146,6 +149,8 @@ final class AppState: ObservableObject {
         question = nil
         answers = []
         unseenNudges = []
+        nudgeAlertIDs.removeAll()
+        Notifications.cancelAll()
         stopPolling()
     }
 
@@ -166,6 +171,8 @@ final class AppState: ObservableObject {
             }
             isReady = true
             startPolling()
+            await Notifications.requestAuthorizationIfNeeded()
+            Notifications.reschedule(hasUnseenNudges: false, nudgerName: nil)
             await refresh()
         } catch {
             errorMessage = "Couldn't connect: \(error.localizedDescription)"
@@ -246,6 +253,11 @@ final class AppState: ObservableObject {
                         "limit": "50",
                     ])
                     unseenNudges = nudges.filter { $0.toPlayer == myName && $0.seenOn == nil }
+                    let fresh = unseenNudges.filter { !nudgeAlertIDs.contains($0.id) }
+                    if !fresh.isEmpty {
+                        nudgeAlertIDs.formUnion(fresh.map(\.id))
+                        Notifications.nudgeAlert(from: fresh.first?.fromPlayer)
+                    }
                 }
             } else {
                 answers = []
@@ -461,6 +473,14 @@ final class AppState: ObservableObject {
         switch phase {
         case .active:
             startPolling()
+        case .background:
+            // Fresh state before the daily reminders fire without us: the
+            // 19:00 text should know about any nudges waiting right now.
+            Notifications.reschedule(
+                hasUnseenNudges: !unseenNudges.isEmpty,
+                nudgerName: unseenNudges.first?.fromPlayer
+            )
+            stopPolling()
         default:
             stopPolling()
         }
