@@ -195,6 +195,24 @@
     },
   };
 
+  // Answer validation (Support/AnswerRules.swift): 10-word minimum with a
+  // 20-character floor, so ten one-letter tokens can't pass as words.
+  const AnswerRules = {
+    minimumWords: 10,
+    characterFloor: 20,
+    words(text) { return text.split(/\s+/).filter(Boolean).length; },
+    isValid(text) {
+      const trimmed = String(text || '').trim();
+      return trimmed.length > this.characterFloor
+        && this.words(trimmed) >= this.minimumWords;
+    },
+    hint(text) {
+      if (this.isValid(text)) return '';
+      const remaining = Math.max(0, this.minimumWords - this.words(String(text || '').trim()));
+      return '10-word minimum · ' + remaining + ' to go';
+    },
+  };
+
   // MARK: APIError + DirectusClient (Directus/DirectusClient.swift)
 
   class APIError extends Error {
@@ -631,7 +649,7 @@
 
   async function saveAnswer(text) {
     const trimmed = text.trim();
-    if (trimmed === '' || !app.question || !hasClient()) return;
+    if (!AnswerRules.isValid(trimmed) || !app.question || !hasClient()) return;
     try {
       const existing = myAnswer();
       if (existing) {
@@ -1005,14 +1023,18 @@
     const answer = myAnswer();
     const trimmed = app.draft.trim();
     const unchanged = answer != null && answer.body === trimmed;
+    const valid = AnswerRules.isValid(app.draft);
+    const hint = AnswerRules.hint(app.draft);
+    const caption = hint !== '' ? hint
+      : (answer && answer.updated_on ? 'Saved ' + relativeTime(answer.updated_on) : '');
     return `
       <div class="card">
         <div class="card-label"><span class="emoji">${symbol('pencil.and.outline')}</span>Your answer</div>
         <textarea class="answer-editor" data-bind="answer-draft" data-focus="answer-draft"
           placeholder="">${esc(app.draft)}</textarea>
         <div class="answer-footer">
-          <span class="saved-caption">${answer && answer.updated_on ? 'Saved ' + esc(relativeTime(answer.updated_on)) : ''}</span>
-          <button class="btn-mini" data-action="submit-answer" ${trimmed === '' || unchanged ? 'disabled' : ''}>
+          <span class="saved-caption answer-caption">${esc(caption)}</span>
+          <button class="btn-mini" data-action="submit-answer" ${!valid || unchanged ? 'disabled' : ''}>
             ${answer == null ? 'Submit' : 'Update'}
           </button>
         </div>
@@ -1729,10 +1751,17 @@
   function syncAnswerButton() {
     const button = document.querySelector('[data-action="submit-answer"]');
     if (!button) return;
-    const trimmed = app.draft.trim();
+    const valid = AnswerRules.isValid(app.draft);
     const answer = myAnswer();
-    const unchanged = answer != null && answer.body === trimmed;
-    button.disabled = trimmed === '' || unchanged;
+    const unchanged = answer != null && answer.body === app.draft.trim();
+    button.disabled = !valid || unchanged;
+    // Typing doesn't re-render, so keep the caption/hint in step by hand.
+    const caption = document.querySelector('.answer-caption');
+    if (caption) {
+      const hint = AnswerRules.hint(app.draft);
+      caption.textContent = hint !== '' ? hint
+        : (answer && answer.updated_on ? 'Saved ' + relativeTime(answer.updated_on) : '');
+    }
   }
 
   function syncSaveButton() {

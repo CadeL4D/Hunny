@@ -63,7 +63,11 @@ struct QuestionView: View {
                 .padding(.top, 6)
 
             HStack {
-                if let answer = app.myAnswer, let updated = answer.updatedAt {
+                if let hint = AnswerRules.hint(for: draft) {
+                    Text(hint)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                } else if let answer = app.myAnswer, let updated = answer.updatedAt {
                     Text("Saved \(updated, format: .relative(presentation: .named))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -75,7 +79,7 @@ struct QuestionView: View {
                     Text(app.myAnswer == nil ? "Submit" : "Update")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(trimmedDraft.isEmpty || app.myAnswer?.body == trimmedDraft)
+                .disabled(!AnswerRules.isValid(draft) || app.myAnswer?.body == trimmedDraft)
             }
             .padding(.top, 8)
         }

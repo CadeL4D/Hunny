@@ -408,7 +408,7 @@ final class AppState: ObservableObject {
 
     func saveAnswer(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let question, let client else { return }
+        guard AnswerRules.isValid(trimmed), let question, let client else { return }
         do {
             if let existing = myAnswer {
                 let updated: Answer = try await client.update(
