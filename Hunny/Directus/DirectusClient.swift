@@ -114,7 +114,50 @@ final class DirectusClient {
         try await send("PATCH", path, body: body)
     }
 
+    /// Directus answers DELETE with 204 No Content — nothing to decode.
+    func delete(_ path: String) async throws {
+        let started = Date()
+        let (data, response) = try await session.data(for: buildRequest("DELETE", path, query: [:], body: nil))
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError(status: -1, message: "No response from the server")
+        }
+        let elapsed = String(format: "%.0fms", Date().timeIntervalSince(started) * 1000)
+        guard (200..<300).contains(http.statusCode) else {
+            let error = APIError.from(status: http.statusCode, data: data)
+            DiagnosticLog.shared.record("DELETE \(path) → \(http.statusCode) \(elapsed) — \(error.message)")
+            throw error
+        }
+        DiagnosticLog.shared.record("DELETE \(path) → \(http.statusCode) \(elapsed)")
+    }
+
     // MARK: Transport
+
+    private func buildRequest(
+        _ method: String,
+        _ path: String,
+        query: [String: String],
+        body: [String: Any]?
+    ) -> URLRequest {
+        var components = URLComponents(
+            url: base.appendingPathComponent(path),
+            resolvingAgainstBaseURL: true
+        )!
+        if !query.isEmpty {
+            components.queryItems = query
+                .sorted { $0.key < $1.key }
+                .map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
+
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        }
+        return request
+    }
 
     private func send<T: Decodable>(
         _ method: String,
@@ -132,24 +175,7 @@ final class DirectusClient {
         query: [String: String],
         body: [String: Any]?
     ) async throws -> Envelope<T> {
-        var components = URLComponents(
-            url: base.appendingPathComponent(path),
-            resolvingAgainstBaseURL: true
-        )!
-        if !query.isEmpty {
-            components.queryItems = query
-                .sorted { $0.key < $1.key }
-                .map { URLQueryItem(name: $0.key, value: $0.value) }
-        }
-
-        var request = URLRequest(url: components.url!)
-        request.httpMethod = method
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
-        }
+        let request = buildRequest(method, path, query: query, body: body)
 
         let started = Date()
         let (data, response) = try await session.data(for: request)

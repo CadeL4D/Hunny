@@ -291,6 +291,8 @@
         throw error;
       }
       let envelope;
+      // Directus answers DELETE with 204 No Content — nothing to decode.
+      if (text === '') return undefined;
       try {
         envelope = JSON.parse(text);
       } catch (_) {
@@ -306,6 +308,7 @@
     list(path, query) { return this.request('GET', path, { query }); },
     create(path, body) { return this.request('POST', path, { body }); },
     update(path, body) { return this.request('PATCH', path, { body }); },
+    del(path) { return this.request('DELETE', path, {}); },
   };
 
   // MARK: App state (State/AppState.swift)
@@ -630,6 +633,29 @@
     }
   }
 
+  // Undo an accidental completion: removes the most recent one for the task
+  // (today's, if several days are in play — the accidental tap is always the
+  // fresh one).
+  async function uncompleteTask(task) {
+    let latest = null;
+    for (const completion of completionsThisWeek(task)) {
+      if (latest == null
+        || completion.completed_on > latest.completed_on
+        || (completion.completed_on === latest.completed_on && completion.id > latest.id)) {
+        latest = completion;
+      }
+    }
+    if (latest == null || !hasClient()) return;
+    try {
+      await client.del('items/task_completions/' + latest.id);
+      app.completions = app.completions.filter((c) => c.id !== latest.id);
+      Haptics.tap();
+      render();
+    } catch (error) {
+      handleFailure(error);
+    }
+  }
+
   async function claimCompetition() {
     if (!app.competitionTask || !hasClient() || app.claim != null) return;
     const body = {
@@ -891,7 +917,8 @@
     }
     const control = canComplete(task)
       ? '<button class="tap-circle" data-action="complete-task" data-id="' + task.id + '" aria-label="Complete task"></button>'
-      : '<span class="done-circle">✓</span>';
+      // Done — tap to undo an accidental completion.
+      : '<button class="done-circle" data-action="uncomplete-task" data-id="' + task.id + '" aria-label="Undo completion">✓</button>';
     return `
       <div class="card task-card">
         <div class="icon-circle">${symbol(task.icon)}</div>
@@ -1574,6 +1601,11 @@
       case 'complete-task': {
         const task = app.tasks.find((t) => t.id === parseInt(trigger.dataset.id, 10));
         if (task) completeTask(task);
+        return;
+      }
+      case 'uncomplete-task': {
+        const task = app.tasks.find((t) => t.id === parseInt(trigger.dataset.id, 10));
+        if (task) uncompleteTask(task);
         return;
       }
       case 'claim-competition': {

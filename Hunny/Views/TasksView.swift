@@ -132,9 +132,15 @@ struct TaskCard: View {
             }
             .buttonStyle(TaskButtonStyle())
         } else {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.title2)
-                .foregroundStyle(Theme.accent)
+            // Done — tap to undo an accidental completion.
+            Button {
+                Task { await app.uncompleteTask(task) }
+            } label: {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Theme.accent)
+            }
+            .buttonStyle(TaskButtonStyle())
         }
     }
 

@@ -385,6 +385,25 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Undo an accidental completion: removes the most recent one for the
+    /// task (today's, if several days are in play — the accidental tap is
+    /// always the fresh one).
+    func uncompleteTask(_ task: OwnTask) async {
+        guard let client else { return }
+        let latest = completionsThisWeek(for: task).max { lhs, rhs in
+            if lhs.completedOn != rhs.completedOn { return lhs.completedOn < rhs.completedOn }
+            return lhs.id < rhs.id
+        }
+        guard let latest else { return }
+        do {
+            try await client.delete("items/task_completions/\(latest.id)")
+            completions.removeAll { $0.id == latest.id }
+            Haptics.tap()
+        } catch {
+            handleFailure(error)
+        }
+    }
+
     func claimCompetition() async {
         guard let competition = competitionTask,
               let client,
