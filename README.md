@@ -108,6 +108,8 @@ Hunny/
   tap at the same moment.
 - Weeks run Monday → Sunday and roll over automatically once the new week's content
   is added in Directus.
+- The score header also tracks a **monthly total**: every point both players earn
+  from the 1st until the end of the month, resetting on the 1st.
 
 ## License
 

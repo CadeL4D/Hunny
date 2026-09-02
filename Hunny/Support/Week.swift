@@ -43,6 +43,55 @@ enum Week {
     }
 }
 
+/// Month math for the running monthly total in the score header. A point
+/// counts toward the month it was *earned* in (`completed_on` day key /
+/// `claimed_at` instant), so the first days of a month can still belong to a
+/// week that started in the previous one.
+enum Month {
+    private static let keyFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+
+    private static let shortDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    /// First instant of the current month, local time.
+    static var start: Date {
+        let comps = Calendar.current.dateComponents([.year, .month], from: Date())
+        return Calendar.current.date(from: comps) ?? Date()
+    }
+
+    /// "yyyy-MM" — prefix of every day key in the current month.
+    static var key: String { keyFormatter.string(from: Date()) }
+
+    /// Day keys are "yyyy-MM-dd", so a prefix match is a month match.
+    static func isCurrent(_ dayKey: String) -> Bool {
+        dayKey.hasPrefix(key)
+    }
+
+    static func isCurrent(_ instant: Date) -> Bool {
+        Calendar.current.isDate(instant, equalTo: Date(), toGranularity: .month)
+    }
+
+    /// Monday of the week the month starts in — the earliest `week_start` the
+    /// monthly data pull needs.
+    static var firstMondayKey: String {
+        Week.key(for: Week.monday(of: start))
+    }
+
+    /// e.g. "Oct 1" — where the monthly total resets.
+    static var resetsLabel: String {
+        let next = Calendar.current.date(byAdding: .month, value: 1, to: start) ?? start
+        return shortDateFormatter.string(from: next)
+    }
+}
+
 /// Timestamps Hunny sends to Directus (Directus accepts UTC ISO-8601).
 enum ISO {
     private static let formatter: DateFormatter = {
@@ -54,4 +103,8 @@ enum ISO {
     }()
 
     static var now: String { formatter.string(from: Date()) }
+
+    /// Any instant as a Directus timestamp string — used for server-side
+    /// `claimed_at` range filters.
+    static func stamp(_ date: Date) -> String { formatter.string(from: date) }
 }

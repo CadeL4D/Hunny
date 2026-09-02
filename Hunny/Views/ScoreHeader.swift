@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Weekly scoreboard shown at the top of every tab: you vs. them, crown on
-/// the leader, week range underneath. The partner column shows a "waiting…"
-/// hint until their device has connected with the exact same name.
+/// Scoreboard shown at the top of every tab: the weekly you-vs-them race on
+/// top (crown on the leader, week range underneath) and, below a divider, the
+/// running monthly total both players build together until it resets on the
+/// 1st. The partner column shows a "waiting…" hint until their device has
+/// connected with the exact same name.
 ///
 /// Tapping your own avatar five times (quickly) opens the hidden task editor.
 struct ScoreHeader: View {
@@ -12,35 +14,41 @@ struct ScoreHeader: View {
     @State private var lastProfileTap: Date?
 
     var body: some View {
-        HStack(spacing: 14) {
-            PlayerScoreColumn(
-                name: app.myName.isEmpty ? "You" : app.myName,
-                points: app.myPoints,
-                isLeader: app.myPoints > app.partnerPoints,
-                alignedLeading: true,
-                onAvatarTap: handleProfileTap
-            )
+        VStack(spacing: 12) {
+            HStack(spacing: 14) {
+                PlayerScoreColumn(
+                    name: app.myName.isEmpty ? "You" : app.myName,
+                    points: app.myPoints,
+                    isLeader: app.myPoints > app.partnerPoints,
+                    alignedLeading: true,
+                    onAvatarTap: handleProfileTap
+                )
 
-            VStack(spacing: 3) {
-                Text("THIS WEEK")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.8)
-                    .foregroundStyle(.tertiary)
-                Text(Week.rangeLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Image(systemName: "sparkles")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.accentGradient)
+                VStack(spacing: 3) {
+                    Text("THIS WEEK")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.tertiary)
+                    Text(Week.rangeLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "sparkles")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.accentGradient)
+                }
+
+                PlayerScoreColumn(
+                    name: app.partnerName.isEmpty ? "Them" : app.partnerName,
+                    points: app.partnerPoints,
+                    isLeader: app.partnerPoints > app.myPoints,
+                    alignedLeading: false,
+                    joined: app.partnerHasJoined
+                )
             }
 
-            PlayerScoreColumn(
-                name: app.partnerName.isEmpty ? "Them" : app.partnerName,
-                points: app.partnerPoints,
-                isLeader: app.partnerPoints > app.myPoints,
-                alignedLeading: false,
-                joined: app.partnerHasJoined
-            )
+            Divider()
+
+            monthTotalRow
         }
         .padding(14)
         .frame(maxWidth: .infinity)
@@ -50,6 +58,31 @@ struct ScoreHeader: View {
         )
         .sheet(isPresented: $showingTaskAdmin) {
             TaskAdminView()
+        }
+    }
+
+    /// Combined points since the 1st, both players, with each side's share —
+    /// "you 12 · them 9 · resets Oct 1".
+    private var monthTotalRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("THIS MONTH")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.8)
+                    .foregroundStyle(.tertiary)
+                Text("you \(app.myMonthPoints) · them \(app.partnerMonthPoints) · resets \(Month.resetsLabel)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text("\(app.monthTotalPoints)")
+                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Theme.accent)
         }
     }
 
