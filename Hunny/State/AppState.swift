@@ -118,7 +118,10 @@ final class AppState: ObservableObject {
     /// names count, same as the weekly columns.
     func monthScores(_ monthKey: String) -> (mine: Int, theirs: Int) {
         let monthCompletions = historyCompletions.filter { Month.contains($0.completedOn, monthKey) }
-        let monthClaims = historyClaims.compactMap(\.claimedAt).filter { Month.contains($0, monthKey) }
+        let monthClaims = historyClaims.filter {
+            guard let claimedAt = $0.claimedAt else { return false }
+            return Month.contains(claimedAt, monthKey)
+        }
         let mine = monthCompletions.filter { $0.player == myName }.count
             + monthClaims.filter { $0.player == myName }.count
         let theirs = monthCompletions.filter { $0.player == partnerName }.count
