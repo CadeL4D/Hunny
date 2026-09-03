@@ -43,11 +43,14 @@ enum Week {
     }
 }
 
-/// Month math for the running monthly total in the score header. A point
-/// counts toward the month it was *earned* in (`completed_on` day key /
-/// `claimed_at` instant), so the first days of a month can still belong to a
-/// week that started in the previous one.
+/// Month math for the monthly race in the score header and its history
+/// sheet. A point counts toward the month it was *earned* in (`completed_on`
+/// day key / `claimed_at` instant), so the first days of a month can still
+/// belong to a week that started in the previous one.
 enum Month {
+    /// How far back the monthly history reaches, current month included.
+    static let historyDepth = 6
+
     private static let keyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM"
@@ -61,33 +64,59 @@ enum Month {
         return formatter
     }()
 
-    /// First instant of the current month, local time.
-    static var start: Date {
-        let comps = Calendar.current.dateComponents([.year, .month], from: Date())
-        return Calendar.current.date(from: comps) ?? Date()
+    private static let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter
+    }()
+
+    /// First instant of the month containing `date`, local time. Anchoring
+    /// on the 1st keeps the month arithmetic overflow-proof.
+    static func start(of date: Date = Date()) -> Date {
+        let comps = Calendar.current.dateComponents([.year, .month], from: date)
+        return Calendar.current.date(from: comps) ?? date
     }
+
+    /// First instant of the month `monthsAgo` months before this one.
+    static func start(monthsAgo: Int) -> Date {
+        Calendar.current.date(byAdding: .month, value: -monthsAgo, to: start()) ?? start()
+    }
+
+    /// "yyyy-MM" for the month containing `date`.
+    static func key(of date: Date) -> String { keyFormatter.string(from: date) }
 
     /// "yyyy-MM" — prefix of every day key in the current month.
-    static var key: String { keyFormatter.string(from: Date()) }
+    static var key: String { key(of: Date()) }
+
+    /// Month keys for the history sheet, current month first.
+    static var historyKeys: [String] {
+        (0..<historyDepth).map { key(of: start(monthsAgo: $0)) }
+    }
+
+    /// e.g. "Sep 2026" for a "yyyy-MM" key.
+    static func label(forKey monthKey: String) -> String {
+        guard let date = keyFormatter.date(from: monthKey) else { return monthKey }
+        return monthFormatter.string(from: date)
+    }
 
     /// Day keys are "yyyy-MM-dd", so a prefix match is a month match.
-    static func isCurrent(_ dayKey: String) -> Bool {
-        dayKey.hasPrefix(key)
+    static func contains(_ dayKey: String, _ monthKey: String) -> Bool {
+        dayKey.hasPrefix(monthKey)
     }
 
-    static func isCurrent(_ instant: Date) -> Bool {
-        Calendar.current.isDate(instant, equalTo: Date(), toGranularity: .month)
+    static func contains(_ instant: Date, _ monthKey: String) -> Bool {
+        key(of: instant) == monthKey
     }
 
-    /// Monday of the week the month starts in — the earliest `week_start` the
-    /// monthly data pull needs.
-    static var firstMondayKey: String {
-        Week.key(for: Week.monday(of: start))
+    /// Monday of the week the month containing `date` starts in — the
+    /// earliest `week_start` the monthly data pull needs.
+    static func firstMondayKey(for date: Date = Date()) -> String {
+        Week.key(for: Week.monday(of: start(of: date)))
     }
 
-    /// e.g. "Oct 1" — where the monthly total resets.
+    /// e.g. "Oct 1" — where the monthly race resets.
     static var resetsLabel: String {
-        let next = Calendar.current.date(byAdding: .month, value: 1, to: start) ?? start
+        let next = Calendar.current.date(byAdding: .month, value: 1, to: start()) ?? start()
         return shortDateFormatter.string(from: next)
     }
 }

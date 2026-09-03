@@ -71,10 +71,14 @@
     },
   };
 
-  // Month math for the running monthly total in the score header — mirrors
-  // Month in Support/Week.swift. A point counts toward the month it was
-  // earned in (completed_on / claimed_at), so the first days of a month can
-  // still belong to a week that started in the previous one.
+  // Month math for the monthly race in the score header and its history
+  // sheet — mirrors Month in Support/Week.swift. A point counts toward the
+  // month it was earned in (completed_on / claimed_at), so the first days of
+  // a month can still belong to a week that started in the previous one.
+
+  // How far back the monthly history reaches, current month included.
+  const HISTORY_MONTHS = 6;
+
   function monthStart(date = new Date()) {
     return new Date(date.getFullYear(), date.getMonth(), 1);
   }
@@ -84,20 +88,40 @@
       const d = new Date();
       return d.getFullYear() + '-' + pad(d.getMonth() + 1);
     },
-    // Day keys are "yyyy-MM-dd" — a prefix match is a month match.
-    isCurrent(dayKey) {
-      return typeof dayKey === 'string' && dayKey.startsWith(this.key());
+    keyOf(date) {
+      return date.getFullYear() + '-' + pad(date.getMonth() + 1);
     },
-    isCurrentInstant(raw) {
+    // First instant of the month n months before this one. Anchoring on the
+    // 1st keeps the month arithmetic overflow-proof.
+    startMonthsAgo(n) {
+      const d = monthStart();
+      d.setMonth(d.getMonth() - n, 1);
+      return d;
+    },
+    // Day keys are "yyyy-MM-dd" — a prefix match is a month match. Instants
+    // belong to the month their local date falls in.
+    contains(dayKey, monthKey) {
+      return typeof dayKey === 'string' && dayKey.startsWith(monthKey);
+    },
+    containsInstant(raw, monthKey) {
       const date = new Date(raw);
-      if (isNaN(date.getTime())) return false;
-      const now = new Date();
-      return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+      return !isNaN(date.getTime()) && this.keyOf(date) === monthKey;
     },
-    // Monday of the week the month starts in — the earliest week_start the
-    // monthly data pull needs.
-    firstMondayKey() { return dayKey(monday(monthStart())); },
-    // e.g. "Oct 1" — where the monthly total resets.
+    // "yyyy-MM" keys for the history sheet, current month first.
+    historyKeys() {
+      const keys = [];
+      for (let i = 0; i < HISTORY_MONTHS; i++) keys.push(this.keyOf(this.startMonthsAgo(i)));
+      return keys;
+    },
+    // e.g. "Sep 2026" for a "yyyy-MM" key.
+    label(monthKey) {
+      const parts = String(monthKey).split('-');
+      return MONTHS[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+    },
+    // Monday of the week the month containing `date` starts in — the earliest
+    // week_start the monthly data pull needs.
+    firstMondayKey(date = new Date()) { return dayKey(monday(monthStart(date))); },
+    // e.g. "Oct 1" — where the monthly race resets.
     resetsLabel() {
       const next = new Date();
       next.setMonth(next.getMonth() + 1, 1);
@@ -371,8 +395,8 @@
     tasks: [],
     allTasks: [],         // retired included — data for the hidden task editor
     completions: [],
-    monthCompletions: [], // earned since the 1st — the running monthly total
-    monthClaims: [],
+    historyCompletions: [], // earned in the last HISTORY_MONTHS months — the monthly race + history
+    historyClaims: [],
     competitionTask: null,
     claim: null,
     question: null,
@@ -417,19 +441,24 @@
     return partnerCompletions().length + (claimed ? 1 : 0);
   }
 
-  // Monthly total — everything both players earned since the 1st. Only the
-  // two known names count, same as the weekly columns.
-  function myMonthPoints() {
-    return app.monthCompletions.filter((c) => c.player === app.myName).length
-      + app.monthClaims.filter((c) => c.player === app.myName).length;
+  // Points each player earned in the given "yyyy-MM" month — completions by
+  // the day they were done plus head-to-head claims. Only the two known
+  // names count, same as the weekly columns. Mirrors AppState.monthScores.
+  function monthScores(monthKey) {
+    const monthCompletions = app.historyCompletions.filter((c) =>
+      Month.contains(c.completed_on, monthKey));
+    const monthClaims = app.historyClaims.filter((c) =>
+      Month.containsInstant(c.claimed_at, monthKey));
+    const mine = monthCompletions.filter((c) => c.player === app.myName).length
+      + monthClaims.filter((c) => c.player === app.myName).length;
+    const theirs = monthCompletions.filter((c) => c.player === app.partnerName).length
+      + monthClaims.filter((c) => c.player === app.partnerName).length;
+    return { mine, theirs };
   }
 
-  function partnerMonthPoints() {
-    return app.monthCompletions.filter((c) => c.player === app.partnerName).length
-      + app.monthClaims.filter((c) => c.player === app.partnerName).length;
-  }
+  function myMonthPoints() { return monthScores(Month.key()).mine; }
 
-  function monthTotalPoints() { return myMonthPoints() + partnerMonthPoints(); }
+  function partnerMonthPoints() { return monthScores(Month.key()).theirs; }
 
   function myAnswer() { return app.answers.find((a) => a.player === app.myName) || null; }
   function theirAnswer() { return app.answers.find((a) => a.player === app.partnerName) || null; }
@@ -466,8 +495,8 @@
     app.tasks = [];
     app.allTasks = [];
     app.completions = [];
-    app.monthCompletions = [];
-    app.monthClaims = [];
+    app.historyCompletions = [];
+    app.historyClaims = [];
     app.competitionTask = null;
     app.claim = null;
     app.question = null;
@@ -511,25 +540,27 @@
     }
   }
 
-  // Pulls everything the current week and the running monthly total need.
-  // Name-based filtering happens here, client-side, so it's always exactly
-  // case-sensitive.
+  // Pulls everything the current week, the monthly race and its history
+  // need. Name-based filtering happens here, client-side, so it's always
+  // exactly case-sensitive.
   async function refresh(quiet = false) {
     if (!hasClient()) return;
     const week = Week.currentKey();
     app.isLoading = true;
     if (!quiet) render();
     try {
-      // Weeks from the Monday the month starts in until now — the monthly
-      // total needs every week that can hold a completed_on date inside the
-      // current month. The weekly view is derived from the same rows below.
-      const monthWindow = sortedStringify({
+      // Weeks from the Monday the earliest history month starts in until
+      // now — the monthly race and its history need every week that can
+      // hold a completed_on date in the last HISTORY_MONTHS months. The
+      // weekly view is derived from the same rows below.
+      const historyStart = Month.startMonthsAgo(HISTORY_MONTHS - 1);
+      const historyWindow = sortedStringify({
         _and: [
-          { week_start: { _gte: Month.firstMondayKey() } },
+          { week_start: { _gte: Month.firstMondayKey(historyStart) } },
           { week_start: { _lte: week } },
         ],
       });
-      const [players, tasks, completions, competitions, questions, monthClaims] = await Promise.all([
+      const [players, tasks, completions, competitions, questions, historyClaims] = await Promise.all([
         client.list('items/players', { fields: 'id,name', sort: 'id', limit: '10' }),
         client.list('items/own_tasks', {
           filter: Filter.eq('active', true),
@@ -538,7 +569,7 @@
           limit: '200',
         }),
         client.list('items/task_completions', {
-          filter: monthWindow,
+          filter: historyWindow,
           fields: 'id,player,task,week_start,completed_on',
           limit: '2000',
         }),
@@ -553,7 +584,7 @@
           limit: '1',
         }),
         client.list('items/competition_claims', {
-          filter: sortedStringify({ claimed_at: { _gte: monthStart().toISOString() } }),
+          filter: sortedStringify({ claimed_at: { _gte: historyStart.toISOString() } }),
           fields: 'id,task,player,claimed_at',
           sort: 'id',
           limit: '100',
@@ -563,8 +594,8 @@
       app.players = players;
       app.tasks = tasks;
       app.completions = completions.filter((c) => c.week_start === week);
-      app.monthCompletions = completions.filter((c) => Month.isCurrent(c.completed_on));
-      app.monthClaims = monthClaims.filter((c) => Month.isCurrentInstant(c.claimed_at));
+      app.historyCompletions = completions;
+      app.historyClaims = historyClaims;
       app.competitionTask = competitions[0] || null;
       app.question = questions[0] || null;
 
@@ -696,8 +727,8 @@
     try {
       const completion = await client.create('items/task_completions', body);
       app.completions.push(completion);
-      // Today is definitionally in the current month.
-      app.monthCompletions.push(completion);
+      // Today is definitionally inside the history window.
+      app.historyCompletions.push(completion);
       Haptics.success();
       render();
     } catch (error) {
@@ -721,7 +752,7 @@
     try {
       await client.del('items/task_completions/' + latest.id);
       app.completions = app.completions.filter((c) => c.id !== latest.id);
-      app.monthCompletions = app.monthCompletions.filter((c) => c.id !== latest.id);
+      app.historyCompletions = app.historyCompletions.filter((c) => c.id !== latest.id);
       Haptics.tap();
       render();
     } catch (error) {
@@ -739,7 +770,9 @@
     try {
       const created = await client.create('items/competition_claims', body);
       app.claim = created;
-      if (Month.isCurrentInstant(created.claimed_at)) app.monthClaims.push(created);
+      // It just happened, so it's inside the history window; a missing
+      // timestamp simply won't count toward any month.
+      app.historyClaims.push(created);
       Haptics.success();
       render();
     } catch (error) {
@@ -861,6 +894,8 @@
     checklist: '<path d="M3.5 6.6l2 2 3.6-4.2"/><path d="M11.8 7h9"/><path d="M3.5 15.6l2 2 3.6-4.2"/><path d="M11.8 16h9"/>',
     // flag.checkered
     flag: '<path d="M5.5 21V4"/><path d="M5.5 5c2.6-1.6 5.2-1.6 7.5 0s4.9 1.6 7.5 0v9.5c-2.6 1.6-5.2 1.6-7.5 0s-4.9-1.6-7.5 0z"/>',
+    // chevron.right
+    chevron: '<path d="M9 5l7 7-7 7"/>',
     // text.bubble
     bubble: '<path d="M12 3.5c-5 0-8.8 2.9-8.8 6.6 0 2.1 1.2 4 3.2 5.2l-.8 4 4.2-2.2c.7.1 1.4.2 2.2.2 4.9 0 8.8-2.9 8.8-6.6S16.9 3.5 12 3.5z"/>',
     // gearshape
@@ -1014,7 +1049,8 @@
   }
 
   // TasksView/CompeteView embed ScoreHeader: the weekly race on top, the
-  // running monthly total below a divider.
+  // monthly race below a divider — crown on whoever's ahead, tapping the row
+  // opens the month-by-month history.
   function scoreHeaderHTML() {
     const mine = app.myName === '' ? 'You' : app.myName;
     const theirs = app.partnerName === '' ? 'Them' : app.partnerName;
@@ -1032,14 +1068,84 @@
           ${playerColumnHTML({ name: theirs, points: their, leader: their > my, right: true, joined: partnerHasJoined(), tappable: false })}
         </div>
         <div class="score-divider"></div>
-        <div class="score-monthly">
+        <div class="score-monthly tappable" data-action="open-month-history" role="button">
           <span class="month-icon">${symbol('calendar')}</span>
           <div class="month-copy">
             <div class="month-label">THIS MONTH</div>
             <div class="month-sub">you ${myMonthPoints()} · them ${partnerMonthPoints()} · resets ${Month.resetsLabel()}</div>
           </div>
-          <div class="month-total">${monthTotalPoints()}</div>
+          ${monthLeaderHTML()}
+          <span class="month-chevron">${svgIcon('chevron')}</span>
         </div>
+      </div>`;
+  }
+
+  // Crown and name of the month's leader; a dead heat shows no crown.
+  function monthLeaderHTML() {
+    const my = myMonthPoints();
+    const their = partnerMonthPoints();
+    if (my === their) return '<div class="month-leader tied">Tied</div>';
+    const name = my > their
+      ? (app.myName === '' ? 'You' : app.myName)
+      : (app.partnerName === '' ? 'Them' : app.partnerName);
+    return `<div class="month-leader"><span class="month-crown">${symbol('crown.fill')}</span>${esc(name)}</div>`;
+  }
+
+  // MonthHistoryView — the monthly row's history sheet: the month in
+  // progress on top (marked "so far"), then every previous month the pull
+  // covers, each with its winner crowned. Months nobody scored in are left
+  // out.
+  function monthHistoryHTML() {
+    const rows = Month.historyKeys()
+      .map((monthKey) => {
+        const scores = monthScores(monthKey);
+        return {
+          monthKey,
+          mine: scores.mine,
+          theirs: scores.theirs,
+          total: scores.mine + scores.theirs,
+        };
+      })
+      .filter((m) => m.total > 0)
+      .map(monthRowHTML);
+    return `
+      <div class="sheet-page">
+        <div class="nav-bar inline">
+          <button class="nav-btn text" data-action="history-done">Done</button>
+          <div class="nav-title-inline">Monthly Score</div>
+          <div class="nav-btn text" style="visibility:hidden">Done</div>
+        </div>
+        <div class="scroll tab-scroll">
+          <div class="stack" style="padding:4px 16px 32px">
+            <div class="section">
+              <div class="list-card">
+                ${rows.join('') || '<div class="list-row muted">Nothing to score yet — points show up here once you start earning them.</div>'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function monthRowHTML(month) {
+    const current = month.monthKey === Month.key();
+    const title = Month.label(month.monthKey) + (current ? ' · so far' : '');
+    let winner;
+    if (month.mine === month.theirs) {
+      winner = '<div class="month-winner tied">Tied</div>';
+    } else {
+      const name = month.mine > month.theirs
+        ? (app.myName === '' ? 'You' : app.myName)
+        : (app.partnerName === '' ? 'Them' : app.partnerName);
+      winner = `<div class="month-winner"><span class="month-crown">${symbol('crown.fill')}</span>${esc(name)}</div>`;
+    }
+    return `
+      <div class="list-row month-row">
+        <div class="month-info">
+          <div class="task-title">${esc(title)}</div>
+          <div class="task-subtitle">you ${month.mine} · them ${month.theirs}</div>
+        </div>
+        ${winner}
       </div>`;
   }
 
@@ -1449,6 +1555,7 @@
     if (kind === 'admin') return adminHTML();
     if (kind === 'task-form') return taskFormHTML();
     if (kind === 'competition-form') return competitionFormHTML();
+    if (kind === 'month-history') return monthHistoryHTML();
     return '';
   }
 
@@ -1718,6 +1825,15 @@
       }
       case 'avatar-tap': {
         handleProfileTap();
+        return;
+      }
+      case 'open-month-history': {
+        Haptics.tap();
+        pushSheet('month-history');
+        return;
+      }
+      case 'history-done': {
+        popSheet();
         return;
       }
       case 'alert-ok': {

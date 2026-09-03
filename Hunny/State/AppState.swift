@@ -30,10 +30,11 @@ final class AppState: ObservableObject {
     @Published private(set) var completions: [TaskCompletion] = []
     @Published private(set) var competitionTask: CompetitionTask?
     @Published private(set) var claim: CompetitionClaim?
-    /// Running monthly total data: completions earned since the 1st and this
-    /// month's head-to-head claims. `completions` above stays week-scoped.
-    @Published private(set) var monthCompletions: [TaskCompletion] = []
-    @Published private(set) var monthClaims: [CompetitionClaim] = []
+    /// Monthly race data: everything earned in the last `Month.historyDepth`
+    /// months — the current race plus the history sheet. `completions` above
+    /// stays week-scoped.
+    @Published private(set) var historyCompletions: [TaskCompletion] = []
+    @Published private(set) var historyClaims: [CompetitionClaim] = []
     @Published private(set) var question: Question?
     @Published private(set) var answers: [Answer] = []
     @Published private(set) var unseenNudges: [Nudge] = []
@@ -112,19 +113,22 @@ final class AppState: ObservableObject {
         return partnerCompletions.count + (partnerClaimed ? 1 : 0)
     }
 
-    /// Monthly total — everything both players earned since the 1st. Only the
-    /// two known names count, same as the weekly columns.
-    var myMonthPoints: Int {
-        monthCompletions.filter { $0.player == myName }.count
+    /// Points each player earned in the given "yyyy-MM" month — completions
+    /// by the day they were done plus head-to-head claims. Only the two known
+    /// names count, same as the weekly columns.
+    func monthScores(_ monthKey: String) -> (mine: Int, theirs: Int) {
+        let monthCompletions = historyCompletions.filter { Month.contains($0.completedOn, monthKey) }
+        let monthClaims = historyClaims.compactMap(\.claimedAt).filter { Month.contains($0, monthKey) }
+        let mine = monthCompletions.filter { $0.player == myName }.count
             + monthClaims.filter { $0.player == myName }.count
-    }
-
-    var partnerMonthPoints: Int {
-        monthCompletions.filter { $0.player == partnerName }.count
+        let theirs = monthCompletions.filter { $0.player == partnerName }.count
             + monthClaims.filter { $0.player == partnerName }.count
+        return (mine, theirs)
     }
 
-    var monthTotalPoints: Int { myMonthPoints + partnerMonthPoints }
+    var myMonthPoints: Int { monthScores(Month.key).mine }
+
+    var partnerMonthPoints: Int { monthScores(Month.key).theirs }
 
     var myAnswer: Answer? { answers.first { $0.player == myName } }
     var theirAnswer: Answer? { answers.first { $0.player == partnerName } }
@@ -162,8 +166,8 @@ final class AppState: ObservableObject {
         tasks = []
         allTasks = []
         completions = []
-        monthCompletions = []
-        monthClaims = []
+        historyCompletions = []
+        historyClaims = []
         competitionTask = nil
         claim = nil
         question = nil
@@ -202,10 +206,10 @@ final class AppState: ObservableObject {
 
     // MARK: Sync
 
-    /// Pulls everything the current week and the running monthly total need.
-    /// Name-based filtering happens here, in Swift, so it's always exactly
-    /// case-sensitive. Pass `quiet: true` for background polling so a dropped
-    /// connection doesn't nag with alerts.
+    /// Pulls everything the current week, the monthly race and its history
+    /// need. Name-based filtering happens here, in Swift, so it's always
+    /// exactly case-sensitive. Pass `quiet: true` for background polling so a
+    /// dropped connection doesn't nag with alerts.
     func refresh(quiet: Bool = false) async {
         guard let client else { return }
         let week = Week.currentKey
@@ -213,12 +217,14 @@ final class AppState: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // Weeks from the Monday the month starts in until now — the
-            // monthly total needs every week that can hold a "completed_on"
-            // date inside the current month. The weekly view is derived from
-            // the same rows below.
-            let monthWindow: [String: Any] = ["_and": [
-                ["week_start": ["_gte": Month.firstMondayKey]],
+            // Weeks from the Monday the earliest history month starts in
+            // until now — the monthly race and its history need every week
+            // that can hold a "completed_on" date in the last
+            // Month.historyDepth months. The weekly view is derived from the
+            // same rows below.
+            let historyStart = Month.start(monthsAgo: Month.historyDepth - 1)
+            let historyWindow: [String: Any] = ["_and": [
+                ["week_start": ["_gte": Month.firstMondayKey(for: historyStart)]],
                 ["week_start": ["_lte": week]],
             ]]
             async let playersAsync = client.list(Player.self, from: "items/players", query: [
@@ -231,7 +237,7 @@ final class AppState: ObservableObject {
                 "limit": "200",
             ])
             async let completionsAsync = client.list(TaskCompletion.self, from: "items/task_completions", query: [
-                "filter": Filter.json(monthWindow),
+                "filter": Filter.json(historyWindow),
                 "fields": "id,player,task,week_start,completed_on",
                 "limit": "2000",
             ])
@@ -245,23 +251,23 @@ final class AppState: ObservableObject {
                 "fields": "id,text,week_start",
                 "limit": "1",
             ])
-            async let monthClaimsAsync = client.list(CompetitionClaim.self, from: "items/competition_claims", query: [
-                "filter": Filter.json(["claimed_at": ["_gte": ISO.stamp(Month.start)]]),
+            async let historyClaimsAsync = client.list(CompetitionClaim.self, from: "items/competition_claims", query: [
+                "filter": Filter.json(["claimed_at": ["_gte": ISO.stamp(historyStart)]]),
                 "fields": "id,task,player,claimed_at",
                 "sort": "id",
                 "limit": "100",
             ])
 
-            let (loadedPlayers, loadedTasks, loadedCompletions, loadedCompetition, loadedQuestion, loadedMonthClaims) =
-                try await (playersAsync, tasksAsync, completionsAsync, competitionsAsync, questionsAsync, monthClaimsAsync)
+            let (loadedPlayers, loadedTasks, loadedCompletions, loadedCompetition, loadedQuestion, loadedHistoryClaims) =
+                try await (playersAsync, tasksAsync, completionsAsync, competitionsAsync, questionsAsync, historyClaimsAsync)
 
             players = loadedPlayers
             tasks = loadedTasks
             completions = loadedCompletions.filter { $0.weekStart == week }
-            monthCompletions = loadedCompletions.filter { Month.isCurrent($0.completedOn) }
+            historyCompletions = loadedCompletions
             competitionTask = loadedCompetition.first
             question = loadedQuestion.first
-            monthClaims = loadedMonthClaims.filter { Month.isCurrent($0.claimedAt ?? Date.distantPast) }
+            historyClaims = loadedHistoryClaims
 
             if let competition = loadedCompetition.first {
                 let claims = try await client.list(CompetitionClaim.self, from: "items/competition_claims", query: [
@@ -415,8 +421,8 @@ final class AppState: ObservableObject {
                 TaskCompletion.self, in: "items/task_completions", body: body
             )
             completions.append(completion)
-            // Today is definitionally in the current month.
-            monthCompletions.append(completion)
+            // Today is definitionally inside the history window.
+            historyCompletions.append(completion)
             Haptics.success()
         } catch {
             handleFailure(error)
@@ -436,7 +442,7 @@ final class AppState: ObservableObject {
         do {
             try await client.delete("items/task_completions/\(latest.id)")
             completions.removeAll { $0.id == latest.id }
-            monthCompletions.removeAll { $0.id == latest.id }
+            historyCompletions.removeAll { $0.id == latest.id }
             Haptics.tap()
         } catch {
             handleFailure(error)
@@ -458,9 +464,9 @@ final class AppState: ObservableObject {
                 CompetitionClaim.self, in: "items/competition_claims", body: body
             )
             claim = created
-            if let claimedAt = created.claimedAt, Month.isCurrent(claimedAt) {
-                monthClaims.append(created)
-            }
+            // It just happened, so it's inside the history window; a nil
+            // timestamp simply won't count toward any month.
+            historyClaims.append(created)
             Haptics.success()
         } catch {
             handleFailure(error)

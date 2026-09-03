@@ -2,14 +2,16 @@ import SwiftUI
 
 /// Scoreboard shown at the top of every tab: the weekly you-vs-them race on
 /// top (crown on the leader, week range underneath) and, below a divider, the
-/// running monthly total both players build together until it resets on the
-/// 1st. The partner column shows a "waiting…" hint until their device has
-/// connected with the exact same name.
+/// monthly race — crown on whoever's ahead since the 1st, resetting on the
+/// 1st. Tapping the monthly row opens the month-by-month history. The
+/// partner column shows a "waiting…" hint until their device has connected
+/// with the exact same name.
 ///
 /// Tapping your own avatar five times (quickly) opens the hidden task editor.
 struct ScoreHeader: View {
     @EnvironmentObject private var app: AppState
     @State private var showingTaskAdmin = false
+    @State private var showingMonthHistory = false
     @State private var profileTapCount = 0
     @State private var lastProfileTap: Date?
 
@@ -49,6 +51,9 @@ struct ScoreHeader: View {
             Divider()
 
             monthTotalRow
+                .sheet(isPresented: $showingMonthHistory) {
+                    MonthHistoryView()
+                }
         }
         .padding(14)
         .frame(maxWidth: .infinity)
@@ -61,28 +66,59 @@ struct ScoreHeader: View {
         }
     }
 
-    /// Combined points since the 1st, both players, with each side's share —
-    /// "you 12 · them 9 · resets Oct 1".
+    /// The monthly race: crown on whoever's ahead since the 1st, each side's
+    /// share underneath. Tapping it opens the month-by-month history.
     private var monthTotalRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "calendar")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(Theme.accent)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("THIS MONTH")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.8)
+        Button {
+            Haptics.tap()
+            showingMonthHistory = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "calendar")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("THIS MONTH")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.tertiary)
+                    Text("you \(app.myMonthPoints) · them \(app.partnerMonthPoints) · resets \(Month.resetsLabel)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .layoutPriority(1)
+                Spacer(minLength: 8)
+                monthLeaderBadge
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.tertiary)
-                Text("you \(app.myMonthPoints) · them \(app.partnerMonthPoints) · resets \(Month.resetsLabel)")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Crown and name of the month's leader; a dead heat shows no crown.
+    @ViewBuilder private var monthLeaderBadge: some View {
+        if app.myMonthPoints != app.partnerMonthPoints {
+            let leaderName = app.myMonthPoints > app.partnerMonthPoints
+                ? (app.myName.isEmpty ? "You" : app.myName)
+                : (app.partnerName.isEmpty ? "Them" : app.partnerName)
+            HStack(spacing: 4) {
+                Image(systemName: "crown.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color(red: 1.0, green: 0.75, blue: 0.05))
+                Text(leaderName)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.accent)
                     .lineLimit(1)
             }
-            Spacer(minLength: 8)
-            Text("\(app.monthTotalPoints)")
-                .font(.system(size: 26, weight: .bold, design: .rounded))
+        } else {
+            Text("Tied")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(.secondary)
         }
     }
 
